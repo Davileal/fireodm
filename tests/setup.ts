@@ -12,8 +12,3 @@ beforeAll(async () => {
 beforeEach(async () => {
   await clearFirestore();
 });
-
-// Optional: Cleanup after all tests
-// afterAll(async () => {
-//   // Code to stop the emulator, if needed and if not handled by an external script
-// });

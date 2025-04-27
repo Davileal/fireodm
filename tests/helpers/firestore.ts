@@ -2,9 +2,6 @@ import { clearFirestoreData } from "@firebase/testing";
 import * as admin from "firebase-admin";
 import { setFirestoreInstance } from "../../src";
 
-// Choose an arbitrary project ID for the emulator
-export const TEST_PROJECT_ID = "stemes-dev";
-
 /**
  * Initializes the test environment by connecting to the Firestore emulator
  * and sets up the Admin SDK instance for the ORM.
@@ -54,7 +51,7 @@ export const setupTestEnvironment =
  */
 export const clearFirestore = async (): Promise<void> => {
   try {
-    await clearFirestoreData({ projectId: TEST_PROJECT_ID });
+    await clearFirestoreData({ projectId: process.env.FIREBASE_PROJECT_ID! });
   } catch (error) {
     console.warn(
       "Could not clear Firestore data. Is the emulator running?",

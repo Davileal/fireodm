@@ -6,6 +6,7 @@ import {
   FieldPath,
   FieldValue,
   FirestoreDataConverter,
+  Transaction as FirestoreTransaction,
   GeoPoint,
   Query,
   QueryDocumentSnapshot,
@@ -13,6 +14,7 @@ import {
   Timestamp,
   UpdateData,
   WhereFilterOp,
+  WriteBatch,
   WriteResult,
 } from "firebase-admin/firestore";
 import "reflect-metadata";
@@ -33,6 +35,26 @@ import {
   RelationMetadata,
 } from "./types";
 import { getValidationSchema } from "./validation";
+
+function isFirestoreTransaction(obj: any): obj is FirestoreTransaction {
+  // The transaction object passed to Runtransaction has methods such as get, set, update, delete
+  // But * no * has Commit (Commit is implicit at the end of Runtransaction).
+  // The presence of 'get' is a good indicator.
+  return (
+    obj &&
+    typeof obj.get === "function" &&
+    typeof obj.set === "function" &&
+    typeof obj.update === "function" &&
+    typeof obj.delete === "function"
+  );
+}
+
+function isWriteBatch(obj: any): obj is WriteBatch {
+  // Writebatch has set, update, delete and commit.The absence of 'get' helps to differentiate.
+  return (
+    obj && typeof obj.commit === "function" && typeof obj.get === "undefined"
+  );
+}
 
 export abstract class BaseModel implements BaseModelInterface {
   public id?: string;
@@ -509,9 +531,59 @@ export abstract class BaseModel implements BaseModelInterface {
     }
   }
 
-  async save(options?: SetOptions): Promise<WriteResult> {
+  /**
+   * Save (creates or overrides) the document in Firestore.
+   * If the instance has no ID, it creates a new document and assigns the generated ID.
+   * If the instance has ID, surpasses or mix (with options.merge) the existing document.
+   * @param Options Options for Operation Set (Ex: {Merge: True}).
+   * @returns A promise that resolves with the writing result (Writeresult).
+   */
+  async save(options?: SetOptions): Promise<WriteResult>;
+  /**
+   * Adds a 'set' operation to this document to an existing transaction.
+   * Hook AFETERSAVE will not be called.Validation and Beforesave are called.
+   * @Param Transaction The Firestore Transaction Active.
+   * @param Options Options for Operation Set (Ex: {Merge: True}).
+   * @returns A promise that resolves when the operation is added to the transaction.
+   */
+  async save(
+    transaction: FirestoreTransaction,
+    options?: SetOptions
+  ): Promise<void>;
+  /**
+   * Adds a 'set' operation to this document to an existing batch.
+   * Hook AFETERSAVE will not be called.Validation and Beforesave are called.
+   * @param Batch the Writebatch Firestore active.
+   * @param Options Options for Operation Set (Ex: {Merge: True}).
+   * @returns A promise that resolves when the operation is added to the batch.
+   */
+  async save(batch: WriteBatch, options?: SetOptions): Promise<void>;
+
+  async save(
+    transactionOrBatchOrOptions?:
+      | FirestoreTransaction
+      | WriteBatch
+      | SetOptions,
+    maybeOptions?: SetOptions
+  ): Promise<WriteResult | void> {
     const constructor = this._getConstructor();
 
+    let transaction: FirestoreTransaction | undefined;
+    let batch: WriteBatch | undefined;
+    let options: SetOptions | undefined;
+
+    if (isFirestoreTransaction(transactionOrBatchOrOptions)) {
+      transaction = transactionOrBatchOrOptions;
+      options = maybeOptions;
+    } else if (isWriteBatch(transactionOrBatchOrOptions)) {
+      batch = transactionOrBatchOrOptions;
+      options = maybeOptions;
+    } else {
+      // No transaction/batch past, the first argument is the options
+      options = transactionOrBatchOrOptions as SetOptions | undefined;
+    }
+
+    // Default values for properties (@Timestamp with autoFill or @Boolean with defaultValue)
     const defaultsTimestamps: string[] =
       Reflect.getOwnMetadata(TIMESTAMP_KEY, this.constructor) || [];
     for (const prop of defaultsTimestamps) {
@@ -519,7 +591,6 @@ export abstract class BaseModel implements BaseModelInterface {
         (this as any)[prop] = Timestamp.now();
       }
     }
-
     const defaultsBoolean: any[] =
       Reflect.getOwnMetadata(BOOLEAN_KEY, this.constructor) || [];
     for (const defaultBoolean of defaultsBoolean) {
@@ -531,30 +602,64 @@ export abstract class BaseModel implements BaseModelInterface {
     // 1. Run beforeSave hook
     await this.beforeSave(options);
 
-    // 2. Validate the current state (intended for Firestore)
-    // Use _toFirestore(true) to get the representation with Refs etc.
+    // 2. Prepare and Validate data
     const dataForFirestore = this._toFirestore(true);
-    this.validate(dataForFirestore);
+    this.validate(dataForFirestore); // Valida a representação que vai pro Firestore
 
-    // 3. Get Document Reference (generates ID if needed)
+    // 3. Get Document Reference (gera ID se necessário, SEM converter)
     const docRef = this._getDocRef();
 
-    // 4. Perform the Firestore operation
-    try {
-      const result = await docRef.set(dataForFirestore, options || {});
-      // 5. Run afterSave hook
-      await this.afterSave(result, options);
-      return result;
-    } catch (error) {
-      console.error(
-        `[${constructor.name}] Error saving document (ID: ${this.id}):`,
-        error
-      );
-      throw error; // Re-throw after logging
+    // 4. Perform Operation (Transaction, Batch, or Direct)
+    if (transaction) {
+      transaction.set(docRef, dataForFirestore, options || {});
+      return Promise.resolve();
+    } else if (batch) {
+      batch.set(docRef, dataForFirestore, options || {});
+      return Promise.resolve();
+    } else {
+      try {
+        const result = await docRef.set(dataForFirestore, options || {});
+        await this.afterSave(result, options);
+        return result;
+      } catch (error) {
+        console.error(
+          `[${constructor.name}] Error saving document (ID: ${this.id}):`,
+          error
+        );
+        throw error;
+      }
     }
   }
 
-  async update(this: this, updateData: any): Promise<WriteResult> {
+  /**
+   * Updates specific document fields in Firestore.It requires the instance to have an id.
+   * @param Updatedata object containing the fields to be updated.It may include FieldValues.
+   * @returns A promise that resolves with the writing result (Writeresult).
+   */
+  async update(updateData: UpdateData<this>): Promise<WriteResult>;
+  /**
+   * Adds an 'update' operation to this document to an existing transaction.
+   * Hook afterpdate will not be called.Partial validation (if implemented) and beforeupdate are called.
+   * @param Updatedata object containing the fields to be updated.
+   * @Param Transaction The Firestore Transaction Active.
+   * @returns A promise that resolves when the operation is added to the transaction.
+   */
+  async update(
+    updateData: UpdateData<this>,
+    transaction: FirestoreTransaction
+  ): Promise<void>;
+  /**
+   * Adds an 'update' operation to this document to an existing batch.
+   * Hook afterpdate will not be called.Partial validation (if implemented) and beforeupdate are called.
+   * @param Updatedata object containing the fields to be updated.
+   * @param Batch the Writebatch Firestore active.
+   * @returns A promise that resolves when the operation is added to the batch.
+   */
+  async update(updateData: UpdateData<this>, batch: WriteBatch): Promise<void>;
+  async update(
+    updateData: UpdateData<this>,
+    transactionOrBatch?: FirestoreTransaction | WriteBatch
+  ): Promise<WriteResult | void> {
     if (!this.id) {
       throw new Error(
         "Cannot update document without an ID. Use save() or ensure the instance has an ID."
@@ -562,13 +667,17 @@ export abstract class BaseModel implements BaseModelInterface {
     }
     const constructor = this._getConstructor();
 
-    // 1. Prepare clean update data (remove id, _, functions, undefined unless FieldValue)
-    // We need to be careful here: updateData might contain FieldValues or explicit nulls/values
-    // for relation fields (e.g., { manager: null } or { manager: newRef })
+    const transaction = isFirestoreTransaction(transactionOrBatch)
+      ? transactionOrBatch
+      : undefined;
+    const batch = isWriteBatch(transactionOrBatch)
+      ? transactionOrBatch
+      : undefined;
+
+    // 1. Prepare clean update data
     let cleanUpdateData: UpdateData<any> = {};
     const relationMeta = constructor._getRelationMetadata();
     const relationProperties = new Set(relationMeta.map((r) => r.propertyName));
-
     for (const key in updateData) {
       if (
         key === "id" ||
@@ -578,121 +687,140 @@ export abstract class BaseModel implements BaseModelInterface {
       ) {
         continue;
       }
-
       const value = (updateData as any)[key];
-
-      // Allow FieldValue instances directly
       if (value instanceof FieldValue) {
         cleanUpdateData[key] = value;
-      }
-      // Allow explicit null or DocumentReference for relations
-      else if (
+      } else if (
         relationProperties.has(key) &&
         (value === null || value instanceof DocumentReference)
       ) {
         cleanUpdateData[key] = value;
-      }
-      // Allow explicit null for non-relations
-      else if (!relationProperties.has(key) && value === null) {
+      } else if (!relationProperties.has(key) && value === null) {
         cleanUpdateData[key] = null;
-      }
-      // Allow other defined, non-relation values
-      else if (!relationProperties.has(key) && value !== undefined) {
-        // Convert Dates to Timestamps for update consistency
+      } else if (!relationProperties.has(key) && value !== undefined) {
         cleanUpdateData[key] =
           value instanceof Date ? Timestamp.fromDate(value) : value;
       }
-      // Ignore undefined values unless they are FieldValues like 'delete()'
-      // Ignore relation fields if they are passed as BaseModel instances (should pass Ref or null)
     }
 
     if (Object.keys(cleanUpdateData).length === 0) {
       console.warn(
         `[${constructor.name}] Update called with no valid fields to update for ID ${this.id}.`
       );
-      // Firestore throws if update is empty, so we avoid the call.
-      // We return a resolved promise that looks like a WriteResult without a writeTime.
-      return Promise.resolve({} as WriteResult);
+      return Promise.resolve(
+        transaction || batch ? undefined : ({} as WriteResult)
+      ); // Retorna void ou WriteResult vazio
     }
 
-    // 2. Validate *only* the fields being updated (partial validation - complex, skip for now)
+    // 2. Partial Validation (Optional - Pull for the Purposes)
     // try { this.validate(cleanUpdateData); } catch (e) { throw e; }
 
-    // 3. Run beforeUpdate hook (pass the processed data)
-    await this.beforeUpdate(cleanUpdateData);
+    // 3. Run beforeUpdate hook
+    await this.beforeUpdate(cleanUpdateData); // Passa os dados processados
 
-    // 4. Get Document Reference
+    // 4. Get Document Reference (SEM converter)
     const docRef = this._getDocRef();
 
-    // 5. Perform Firestore operation
-    try {
-      const result = await docRef.update(cleanUpdateData);
-
-      // 6. Update local instance state carefully
-      for (const key in cleanUpdateData) {
-        if (Object.prototype.hasOwnProperty.call(cleanUpdateData, key)) {
-          const value = cleanUpdateData[key];
-          // Don't assign FieldValues that don't resolve locally (e.g., increment, serverTimestamp)
-          // Assign null, Refs, and other direct values.
-          if (!(value instanceof FieldValue) || value === FieldValue.delete()) {
-            (this as any)[key] =
-              value === FieldValue.delete() ? undefined : value; // Apply delete locally
-            // If a relation was updated (to Ref or null), clear the populated cache for it
-            if (relationProperties.has(key)) {
-              delete this._populatedRelations[key];
-            }
-          } else {
-            // For FieldValues like increment, the local value is stale.
-            // Consider adding a flag or logging. Reload might be needed.
-            console.warn(
-              `[${constructor.name}] Field '${key}' updated with FieldValue on ID ${this.id}. Local instance may be stale. Use reload() if needed.`
-            );
-          }
-        }
+    // 5. Perform Operation
+    if (transaction) {
+      transaction.update(docRef, cleanUpdateData);
+      // afterUpdate hook NÃO é chamado aqui
+      // Updates local condition only if it is not FieldValue
+      this._updateLocalState(cleanUpdateData, relationProperties);
+      return Promise.resolve(); // Retorna void
+    } else if (batch) {
+      batch.update(docRef, cleanUpdateData);
+      // afterUpdate hook NÃO é chamado aqui
+      // Updates local condition only if it is not FieldValue
+      this._updateLocalState(cleanUpdateData, relationProperties);
+      return Promise.resolve(); // Retorna void
+    } else {
+      // Operação direta
+      try {
+        const result = await docRef.update(cleanUpdateData);
+        // 6. Local Update Instance State (for direct operation only)
+        this._updateLocalState(cleanUpdateData, relationProperties);
+        // 7. RUN afterpdate HOOK (only for direct operation)
+        await this.afterUpdate(result, cleanUpdateData);
+        return result;
+      } catch (error) {
+        console.error(
+          `[${constructor.name}] Error updating document (ID: ${this.id}):`,
+          error
+        );
+        throw error;
       }
-
-      // 7. Run afterUpdate hook
-      await this.afterUpdate(result, cleanUpdateData);
-      return result;
-    } catch (error) {
-      console.error(
-        `[${constructor.name}] Error updating document (ID: ${this.id}):`,
-        error
-      );
-      throw error; // Re-throw after logging
     }
   }
 
-  async delete(): Promise<WriteResult> {
+  /**
+   * Excludes the document from the Firestore.It requires the instance to have an id.
+   * @returns A promise that resolves with the writing result (Writeresult).
+   */
+  async delete(): Promise<WriteResult>;
+  /**
+   * Adds an 'delete' operation to this document to an existing transaction.
+   * Hook afterdelet will not be called.Hook BefoDelete is called.
+   * @Param Transaction The Firestore Transaction Active.
+   * @returns A promise that resolves when the operation is added to the transaction.
+   */
+  async delete(transaction: FirestoreTransaction): Promise<void>;
+  /**
+   * Adds an 'delete' operation to this document to an existing batch.
+   * Hook afterdelet will not be called.Hook BefoDelete is called.
+   * @param Batch the Writebatch Firestore active.
+   * @returns A promise that resolves when the operation is added to the batch.
+   */
+  async delete(batch: WriteBatch): Promise<void>;
+  async delete(
+    transactionOrBatch?: FirestoreTransaction | WriteBatch
+  ): Promise<WriteResult | void> {
     if (!this.id) {
       throw new Error("Cannot delete document without an ID.");
     }
     const constructor = this._getConstructor();
     const originalId = this.id; // Preserve ID for hooks/logging
 
+    const transaction = isFirestoreTransaction(transactionOrBatch)
+      ? transactionOrBatch
+      : undefined;
+    const batch = isWriteBatch(transactionOrBatch)
+      ? transactionOrBatch
+      : undefined;
+
     // 1. Run beforeDelete hook
     await this.beforeDelete();
 
-    // 2. Get Document Reference
+    //2GetDocumentReference (semConverter)
     const docRef = this._getDocRef();
 
-    // 3. Perform Firestore operation
-    try {
-      const result = await docRef.delete();
-
-      // 4. Invalidate local instance
+    // 3. Perform Operation
+    if (transaction) {
+      transaction.delete(docRef);
       this.id = undefined;
-      this._populatedRelations = {}; // Clear populated cache
-
-      // 5. Run afterDelete hook
-      await this.afterDelete(result, originalId);
-      return result;
-    } catch (error) {
-      console.error(
-        `[${constructor.name}] Error deleting document (ID: ${originalId}):`,
-        error
-      );
-      throw error; // Re-throw after logging
+      this._populatedRelations = {};
+      return Promise.resolve();
+    } else if (batch) {
+      batch.delete(docRef);
+      this.id = undefined;
+      this._populatedRelations = {};
+      return Promise.resolve();
+    } else {
+      try {
+        const result = await docRef.delete();
+        // 4. Local Invalidate Instance (for direct operation only)
+        this.id = undefined;
+        this._populatedRelations = {};
+        // 5. RUN afterDelete Hook (only for direct operation)
+        await this.afterDelete(result, originalId);
+        return result;
+      } catch (error) {
+        console.error(
+          `[${constructor.name}] Error deleting document (ID: ${originalId}):`,
+          error
+        );
+        throw error;
+      }
     }
   }
 
@@ -735,8 +863,25 @@ export abstract class BaseModel implements BaseModelInterface {
     return this;
   }
 
-  // --- Hooks (Lifecycle Callbacks) ---
-  // Implement these methods in subclasses as needed.
+  private _updateLocalState(
+    cleanUpdateData: UpdateData<any>,
+    relationProperties: Set<string>
+  ): void {
+    for (const key in cleanUpdateData) {
+      if (Object.prototype.hasOwnProperty.call(cleanUpdateData, key)) {
+        const value = cleanUpdateData[key];
+        if (!(value instanceof FieldValue) || value === FieldValue.delete()) {
+          (this as any)[key] =
+            value === FieldValue.delete() ? undefined : value;
+          if (relationProperties.has(key)) {
+            delete this._populatedRelations[key];
+          }
+        } else {
+          // Não loga mais warning aqui, pois é esperado em tx/batch
+        }
+      }
+    }
+  }
 
   async beforeSave(options?: SetOptions): Promise<void> {}
   async afterSave(result: WriteResult, options?: SetOptions): Promise<void> {}

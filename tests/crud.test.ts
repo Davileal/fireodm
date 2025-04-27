@@ -309,4 +309,378 @@ describe("BaseModel - CRUD Operations", () => {
     // Checks that afterSave was not called
     expect(userHooks.afterSave).not.toHaveBeenCalled();
   });
+
+  it("should find documents by field using findWhere()", async () => {
+    // Setup two users with different names and ages
+    const u1 = new User({ name: "FindOne", email: "one@test.com", age: 25 });
+    const u2 = new User({ name: "FindTwo", email: "two@test.com", age: 30 });
+    await u1.save();
+    await u2.save();
+
+    // Query by name
+    const nameResult = await User.findWhere("name", "==", "FindOne");
+    expect(Array.isArray(nameResult)).toBe(true);
+    expect(nameResult).toHaveLength(1);
+    expect(nameResult[0].id).toBe(u1.id);
+
+    // Query by age
+    const ageResult = await User.findWhere("age", ">=", 30);
+    expect(ageResult).toHaveLength(1);
+    expect(ageResult[0].id).toBe(u2.id);
+  });
+
+  it("should return an empty array when no documents match findWhere()", async () => {
+    const results = await User.findWhere(
+      "email",
+      "==",
+      "doesnotexist@test.com"
+    );
+    expect(Array.isArray(results)).toBe(true);
+    expect(results).toHaveLength(0);
+  });
+});
+
+// =======================================================================
+// TESTS FOR FIRESTORE TRANSACTIONS
+// =======================================================================
+describe("BaseModel - Firestore Transactions", () => {
+  let db: FirebaseFirestore.Firestore;
+
+  beforeAll(() => {
+    db = getFirestoreInstance();
+  });
+
+  beforeEach(() => {
+    userHooks.reset();
+  });
+
+  it("should save a new document within a transaction", async () => {
+    const user = new User({ name: "Tx Save", email: "txsave@test.com" });
+    let userId: string | undefined;
+    let hookCalledInsideTx = false;
+
+    await db.runTransaction(async (transaction) => {
+      await user.save(transaction);
+      expect(user.id).toBeDefined();
+      userId = user.id;
+      expect(userHooks.beforeSave).toHaveBeenCalledTimes(1);
+      expect(userHooks.afterSave).not.toHaveBeenCalled();
+      hookCalledInsideTx = userHooks.beforeSave.mock.calls.length > 0;
+    });
+
+    expect(hookCalledInsideTx).toBe(true);
+    expect(userHooks.afterSave).not.toHaveBeenCalled();
+
+    expect(userId).toBeDefined();
+    const docSnap = await db.collection("users").doc(userId!).get();
+    expect(docSnap.exists).toBe(true);
+    expect(docSnap.data()?.name).toBe("Tx Save");
+    expect(docSnap.data()?.hookValue).toBe("set_on_beforeSave");
+  });
+
+  it("should update a document within a transaction", async () => {
+    const initialUser = new User({
+      name: "Tx Update Init",
+      email: "txupd@test.com",
+    });
+    await initialUser.save();
+    const userId = initialUser.id!;
+    userHooks.reset();
+
+    let hookCalledInsideTx = false;
+    let finalName: string | undefined;
+
+    await db.runTransaction(async (transaction) => {
+      const userRef = db.collection("users").doc(userId);
+      const userSnap = await transaction.get(userRef);
+      if (!userSnap.exists)
+        throw new Error("Document not found in transaction!");
+      const txUserData = userSnap.data();
+
+      const userInstance = new User(txUserData as any, userId);
+
+      const updateData = { name: "Tx Updated Name", age: 99 };
+      await userInstance.update(updateData, transaction);
+      finalName = userInstance.name;
+
+      expect(userHooks.beforeUpdate).toHaveBeenCalledTimes(1);
+      expect(userHooks.beforeUpdate).toHaveBeenCalledWith(
+        userInstance,
+        expect.objectContaining(updateData)
+      );
+      expect(userHooks.afterUpdate).not.toHaveBeenCalled();
+      hookCalledInsideTx = userHooks.beforeUpdate.mock.calls.length > 0;
+    });
+
+    expect(hookCalledInsideTx).toBe(true);
+    expect(userHooks.afterUpdate).not.toHaveBeenCalled();
+    expect(finalName).toBe("Tx Updated Name");
+
+    const docSnap = await db.collection("users").doc(userId).get();
+    expect(docSnap.exists).toBe(true);
+    expect(docSnap.data()?.name).toBe("Tx Updated Name");
+    expect(docSnap.data()?.age).toBe(99);
+    expect(docSnap.data()?.hookValue).toBe("set_on_beforeUpdate"); // Hook beforeUpdate funcionou
+  });
+
+  it("should delete a document within a transaction", async () => {
+    const user = new User({ name: "Tx Delete", email: "txdel@test.com" });
+    await user.save();
+    const userId = user.id!;
+    userHooks.reset();
+
+    let hookCalledInsideTx = false;
+
+    await db.runTransaction(async (transaction) => {
+      const userInstance = new User({}, userId);
+
+      await userInstance.delete(transaction); // Passa transaction
+
+      expect(userHooks.beforeDelete).toHaveBeenCalledTimes(1);
+      expect(userHooks.afterDelete).not.toHaveBeenCalled();
+      hookCalledInsideTx = userHooks.beforeDelete.mock.calls.length > 0;
+    });
+
+    expect(hookCalledInsideTx).toBe(true);
+    expect(userHooks.afterDelete).not.toHaveBeenCalled();
+
+    const docSnap = await db.collection("users").doc(userId).get();
+    expect(docSnap.exists).toBe(false);
+  });
+
+  it("should handle multiple ORM operations within a single transaction", async () => {
+    const userA = new User({ name: "User A Tx Multi", email: "a@tx.com" });
+    const userB = new User({ name: "User B Tx Multi", email: "b@tx.com" });
+    await userA.save();
+    await userB.save();
+    const userAId = userA.id!;
+    const userBId = userB.id!;
+    userHooks.reset();
+
+    const userC = new User({ name: "User C Tx Multi", email: "c@tx.com" }); // Novo usuário
+    let userCId: string | undefined;
+
+    await db.runTransaction(async (transaction) => {
+      const userARef = db.collection("users").doc(userAId);
+      const userASnap = await transaction.get(userARef);
+      if (!userASnap.exists) throw new Error("User A missing");
+      const userAInstance = new User(userASnap.data() as any, userAId);
+
+      await userAInstance.update({ name: "User A Updated in Tx" }, transaction);
+
+      await userC.save(transaction); // ID será gerado aqui
+      userCId = userC.id;
+
+      const userBInstance = new User({}, userBId);
+      await userBInstance.delete(transaction);
+
+      expect(userHooks.beforeUpdate).toHaveBeenCalledTimes(1);
+      expect(userHooks.beforeSave).toHaveBeenCalledTimes(1);
+      expect(userHooks.beforeDelete).toHaveBeenCalledTimes(1);
+      expect(userHooks.afterUpdate).not.toHaveBeenCalled();
+      expect(userHooks.afterSave).not.toHaveBeenCalled();
+      expect(userHooks.afterDelete).not.toHaveBeenCalled();
+    });
+
+    const snapA = await db.collection("users").doc(userAId).get();
+    const snapB = await db.collection("users").doc(userBId).get();
+    expect(userCId).toBeDefined();
+    const snapC = await db.collection("users").doc(userCId!).get();
+
+    expect(snapA.exists).toBe(true);
+    expect(snapA.data()?.name).toBe("User A Updated in Tx");
+    expect(snapB.exists).toBe(false);
+    expect(snapC.exists).toBe(true);
+    expect(snapC.data()?.name).toBe("User C Tx Multi");
+
+    expect(userHooks.afterUpdate).not.toHaveBeenCalled();
+    expect(userHooks.afterSave).not.toHaveBeenCalled();
+    expect(userHooks.afterDelete).not.toHaveBeenCalled();
+  });
+
+  it("should fail transaction if ORM validation fails inside", async () => {
+    const invalidUser = new User({ name: "TX Invalid", email: "bad-email" });
+    let transactionReachedEnd = false;
+
+    await expect(
+      db.runTransaction(async (transaction) => {
+        await invalidUser.save(transaction);
+        transactionReachedEnd = true;
+      })
+    ).rejects.toThrow(ValidationError);
+
+    expect(transactionReachedEnd).toBe(false);
+    expect(invalidUser.id).toBeUndefined();
+  });
+
+  it("should rollback transaction if an error is thrown after ORM calls", async () => {
+    const user = new User({ name: "TX Rollback", email: "rollback@test.com" });
+    let userId: string | undefined;
+
+    await expect(
+      db.runTransaction(async (transaction) => {
+        await user.save(transaction);
+        userId = user.id;
+        expect(userId).toBeDefined();
+        throw new Error("Something went wrong after ORM operation!");
+      })
+    ).rejects.toThrow("Something went wrong after ORM operation!");
+
+    expect(userId).toBeDefined();
+    const docSnap = await db.collection("users").doc(userId!).get();
+    expect(docSnap.exists).toBe(false);
+  });
+});
+
+// =======================================================================
+// TESTS FOR FIRESTORE BATCHED WRITES
+// =======================================================================
+describe("BaseModel - Batched Writes", () => {
+  let db: FirebaseFirestore.Firestore;
+
+  beforeAll(() => {
+    db = getFirestoreInstance();
+  });
+
+  beforeEach(() => {
+    userHooks.reset();
+  });
+
+  it("should save a new document within a batch", async () => {
+    const batch = db.batch();
+    const user = new User({ name: "Batch Save", email: "batchsave@test.com" });
+
+    await user.save(batch);
+    const userId = user.id;
+    expect(userId).toBeDefined();
+
+    expect(userHooks.beforeSave).toHaveBeenCalledTimes(1);
+    expect(userHooks.afterSave).not.toHaveBeenCalled();
+
+    await batch.commit();
+
+    expect(userHooks.afterSave).not.toHaveBeenCalled();
+
+    const docSnap = await db.collection("users").doc(userId!).get();
+    expect(docSnap.exists).toBe(true);
+    expect(docSnap.data()?.name).toBe("Batch Save");
+    expect(docSnap.data()?.hookValue).toBe("set_on_beforeSave");
+  });
+
+  it("should update a document within a batch", async () => {
+    const user = new User({
+      name: "Batch Update Init",
+      email: "batchupd@test.com",
+    });
+    await user.save();
+    const userId = user.id!;
+    userHooks.reset();
+
+    const batch = db.batch();
+    const userInstance = new User({}, userId);
+    const updateData = { name: "Batch Updated Name", age: 55 };
+
+    await userInstance.update(updateData, batch);
+
+    expect(userHooks.beforeUpdate).toHaveBeenCalledTimes(1);
+    expect(userHooks.beforeUpdate).toHaveBeenCalledWith(
+      userInstance,
+      expect.objectContaining(updateData)
+    );
+    expect(userHooks.afterUpdate).not.toHaveBeenCalled();
+
+    await batch.commit();
+
+    expect(userHooks.afterUpdate).not.toHaveBeenCalled();
+
+    const docSnap = await db.collection("users").doc(userId).get();
+    expect(docSnap.exists).toBe(true);
+    expect(docSnap.data()?.name).toBe("Batch Updated Name");
+    expect(docSnap.data()?.age).toBe(55);
+    expect(docSnap.data()?.hookValue).toBe("set_on_beforeUpdate");
+  });
+
+  it("should delete a document within a batch", async () => {
+    const user = new User({ name: "Batch Delete", email: "batchdel@test.com" });
+    await user.save();
+    const userId = user.id!;
+    userHooks.reset();
+
+    const batch = db.batch();
+    const userInstance = new User({}, userId);
+
+    await userInstance.delete(batch);
+
+    expect(userHooks.beforeDelete).toHaveBeenCalledTimes(1);
+    expect(userHooks.afterDelete).not.toHaveBeenCalled();
+
+    await batch.commit();
+
+    expect(userHooks.afterDelete).not.toHaveBeenCalled();
+
+    const docSnap = await db.collection("users").doc(userId).get();
+    expect(docSnap.exists).toBe(false);
+  });
+
+  it("should handle multiple ORM operations within a single batch", async () => {
+    const userA = new User({
+      name: "User A Batch Multi",
+      email: "a@batch.com",
+    });
+    const userToDelete = new User({
+      name: "User ToDelete Batch",
+      email: "del@batch.com",
+    });
+    await userA.save();
+    await userToDelete.save();
+    const userAId = userA.id!;
+    const userToDeleteId = userToDelete.id!;
+    userHooks.reset();
+
+    const batch = db.batch();
+    const userAInstance = new User({}, userAId);
+    const userBNew = new User({
+      name: "User B Batch New",
+      email: "b@batch.com",
+    });
+    const userToDeleteInstance = new User({}, userToDeleteId);
+
+    await userAInstance.update({ name: "User A Updated in Batch" }, batch);
+    await userBNew.save(batch);
+    const userBId = userBNew.id;
+    await userToDeleteInstance.delete(batch);
+
+    expect(userHooks.beforeUpdate).toHaveBeenCalledTimes(1);
+    expect(userHooks.beforeSave).toHaveBeenCalledTimes(1);
+    expect(userHooks.beforeDelete).toHaveBeenCalledTimes(1);
+    expect(userHooks.afterUpdate).not.toHaveBeenCalled();
+    expect(userHooks.afterSave).not.toHaveBeenCalled();
+    expect(userHooks.afterDelete).not.toHaveBeenCalled();
+
+    await batch.commit();
+
+    const snapA = await db.collection("users").doc(userAId).get();
+    const snapB = await db.collection("users").doc(userBId!).get();
+    const snapDeleted = await db.collection("users").doc(userToDeleteId).get();
+
+    expect(snapA.exists).toBe(true);
+    expect(snapA.data()?.name).toBe("User A Updated in Batch");
+    expect(snapB.exists).toBe(true);
+    expect(snapB.data()?.name).toBe("User B Batch New");
+    expect(snapDeleted.exists).toBe(false);
+
+    expect(userHooks.afterUpdate).not.toHaveBeenCalled();
+    expect(userHooks.afterSave).not.toHaveBeenCalled();
+    expect(userHooks.afterDelete).not.toHaveBeenCalled();
+  });
+
+  it("should throw validation error synchronously when adding invalid data to batch", async () => {
+    const batch = db.batch();
+    const invalidUser = new User({ name: "Batch Invalid", email: "bad-email" });
+
+    await expect(invalidUser.save(batch)).rejects.toThrow(ValidationError);
+    await batch.commit();
+
+    expect(invalidUser.id).toBeUndefined();
+  });
 });
