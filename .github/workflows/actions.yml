@@ -1,0 +1,31 @@
+name: CI
+on: pull_request
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+        steps:
+            - uses: actions/checkout@v3
+            - uses: actions/setup-node@v3
+              with:
+                  node-version: '20'
+
+            - name: Install Dependencies
+              run: npm ci
+
+            - name: Generate .env for tests
+              run: |
+                cat > .env <<EOF
+                FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
+                FIREBASE_CLIENT_EMAIL=${{ secrets.FIREBASE_CLIENT_EMAIL }}
+                FIREBASE_PRIVATE_KEY=${{ secrets.FIREBASE_PRIVATE_KEY }}
+                EOF
+
+            - name: Build
+              run: npm run build
+
+            - name: Test
+              run: npm run test
