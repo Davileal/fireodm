@@ -1,5 +1,9 @@
 # FireODM
 
+<p align="center">
+  <img src="./logo.png" alt="FireODM Logo" width="200"/>
+</p>
+
 [![npm version](https://badge.fury.io/js/fireodm.svg)](https://badge.fury.io/js/fireodm)  
 
 A basic, extensible ORM (Object-Relational Mapper) / ODM (Object-Document Mapper) for the [Firebase Admin SDK](https://firebase.google.com/docs/admin/setup) in Node.js, built with TypeScript. Simplifies interacting with Firestore using classes, decorators, Zod validation, and relationship handling (DocumentReference).
