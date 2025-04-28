@@ -7,7 +7,7 @@
 [![npm version](https://badge.fury.io/js/fireodm.svg)](https://badge.fury.io/js/fireodm)
 [![Build](https://github.com/Davileal/fireodm/actions/workflows/actions.yml/badge.svg)](https://github.com/Davileal/fireodm/actions/workflows/actions.yml)
 [![License](https://img.shields.io/github/license/Davileal/fireodm)](https://github.com/Davileal/fireodm/blob/main/LICENSE)
-[![gzip size](https://badgen.net/bundlephobia/minzip/fireodm)](https://bundlephobia.com/package/fireodm)
+[![gzip size](https://img.shields.io/bundlephobia/minzip/fireodm)](https://bundlephobia.com/package/fireodm)
 [![codecov](https://codecov.io/gh/Davileal/fireodm/branch/master/graph/badge.svg)](https://codecov.io/gh/Davileal/fireodm)
 
 
