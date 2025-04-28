@@ -2,6 +2,8 @@ import { clearFirestoreData } from "@firebase/testing";
 import * as admin from "firebase-admin";
 import { setFirestoreInstance } from "../../src";
 
+export const FIREBASE_PROJECT_ID='fireodm';
+
 /**
  * Initializes the test environment by connecting to the Firestore emulator
  * and sets up the Admin SDK instance for the ORM.
@@ -15,11 +17,7 @@ export const setupTestEnvironment =
     // Initializes the Firebase Admin SDK (only once per test process)
     if (!admin.apps.length) {
       admin.initializeApp({
-        credential: admin.credential.cert({
-          projectId: process.env.FIREBASE_PROJECT_ID,
-          privateKey: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
-          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        }),
+        projectId: FIREBASE_PROJECT_ID,
       });
     }
 
@@ -51,7 +49,7 @@ export const setupTestEnvironment =
  */
 export const clearFirestore = async (): Promise<void> => {
   try {
-    await clearFirestoreData({ projectId: process.env.FIREBASE_PROJECT_ID! });
+    await clearFirestoreData({ projectId: FIREBASE_PROJECT_ID });
   } catch (error) {
     console.warn(
       "Could not clear Firestore data. Is the emulator running?",
