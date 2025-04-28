@@ -4,7 +4,7 @@
   <img src="./logo.png" alt="FireODM Logo" width="200"/>
 </p>
 
-[![npm version](https://badge.fury.io/js/fireodm.svg)](https://badge.fury.io/js/fireodm)
+[![npm version](https://img.shields.io/npm/v/fireodm)](https://www.npmjs.com/package/fireodm)
 [![Build](https://github.com/Davileal/fireodm/actions/workflows/actions.yml/badge.svg)](https://github.com/Davileal/fireodm/actions/workflows/actions.yml)
 [![License](https://img.shields.io/github/license/Davileal/fireodm)](https://github.com/Davileal/fireodm/blob/main/LICENSE)
 [![gzip size](https://img.shields.io/bundlephobia/minzip/fireodm)](https://bundlephobia.com/package/fireodm)
