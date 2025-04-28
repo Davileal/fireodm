@@ -28,9 +28,9 @@ A basic, extensible ORM (Object-Relational Mapper) / ODM (Object-Document Mapper
 ## Installation
 
 ```bash
-npm install my-firestore-orm firebase-admin reflect-metadata zod
+npm install fireodm firebase-admin reflect-metadata zod
 # ou
-yarn add my-firestore-orm firebase-admin reflect-metadata zod
+yarn add fireodm firebase-admin reflect-metadata zod
 ```
 
 **Peer Dependencies:**
@@ -59,7 +59,7 @@ Before using any ORM model, you need to initialize `firebase-admin` and provide 
 ```typescript
 import 'reflect-metadata'; // at the top!
 import * as admin from 'firebase-admin';
-import { setFirestoreInstance } from 'my-firestore-orm'; // replace with your package name
+import { setFirestoreInstance } from 'fireodm'; // replace with your package name
 
 // 1. Initialize Firebase Admin (using your credentials)
 admin.initializeApp({
