@@ -28,28 +28,23 @@ A basic, extensible ORM (Object-Relational Mapper) / ODM (Object-Document Mapper
 ## Installation
 
 ```bash
-npm install fireodm firebase-admin reflect-metadata zod
-# ou
-yarn add fireodm firebase-admin reflect-metadata zod
+npm install fireodm firebase-admin
+# or
+yarn add fireodm firebase-admin
 ```
 
-**Peer Dependencies:**
+## TypeScript Configuration
 
-* `firebase-admin`: The Firebase Admin SDK (peer dependency).
-* `reflect-metadata`: Required for decorators to work (peer dependency).
-* `zod`: Used for schema validation (peer dependency).
+By default, subclass field initializers will override the values assigned via `BaseModel`’s `Object.assign`.  
+If you’d rather **not** write manual `this.foo = data.foo` bindings in every constructor, add the following to your `tsconfig.json`:
 
-
-## Important: `reflect-metadata`
-
-You **MUST** import `reflect-metadata` **once** in your application's entry point, **before** any other code that uses this library or decorators.
-
-
-```typescript
-// src/index.ts or src/server.ts (or wherever your app starts)
-import 'reflect-metadata';
-
-// ... rest of your application initialization
+```json
+{
+  "compilerOptions": {
+    // …
+    "useDefineForClassFields": false
+  }
+}
 ```
 
 ## Initialization
@@ -57,7 +52,6 @@ import 'reflect-metadata';
 Before using any ORM model, you need to initialize `firebase-admin` and provide the Firestore instance to the library:
 
 ```typescript
-import 'reflect-metadata'; // at the top!
 import * as admin from 'firebase-admin';
 import { setFirestoreInstance } from 'fireodm'; // replace with your package name
 
