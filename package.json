@@ -1,6 +1,6 @@
 {
   "name": "fireodm",
-  "version": "1.0.4",
+  "version": "1.0.3",
   "description": "A basic and extensible ODM for the Firestore Admin SDK in Node.js with decorators, relationships, and validation.",
   "main": "dist/index.js",
   "module": "dist/esm/index.js",
@@ -37,7 +37,7 @@
     "odm",
     "google-cloud"
   ],
-  "author": "Seu Nome <seu-email@example.com>",
+  "author": "Davi Leal <davi.leal737@gmail.com>",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/Davileal/fireodm/issues"
