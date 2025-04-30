@@ -40,9 +40,9 @@
   "author": "Seu Nome <seu-email@example.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/SEU-USUARIO/my-firestore-orm/issues"
+    "url": "https://github.com/Davileal/fireodm/issues"
   },
-  "homepage": "https://github.com/SEU-USUARIO/my-firestore-orm#readme",
+  "homepage": "https://github.com/Davileal/fireodm#readme",
   "peerDependencies": {
     "firebase-admin": "^11.0.0 || ^12.0.0",
     "reflect-metadata": "^0.1.13 || ^0.2.0",
