@@ -1,7 +1,5 @@
-# 🔥FireODM
-
 <p align="center">
-  <img src="./logo.png" alt="FireODM Logo" width="200"/>
+  <img src="./logo.png" alt="FireODM Logo" width="300"/>
 </p>
 
 [![npm version](https://img.shields.io/npm/v/fireodm)](https://www.npmjs.com/package/fireodm)
