@@ -9,6 +9,8 @@
 [![codecov](https://codecov.io/gh/Davileal/fireodm/branch/master/graph/badge.svg)](https://codecov.io/gh/Davileal/fireodm)
 
 
+[Documentation](https://fireodm.netlify.app)
+
 A basic, extensible ORM (Object-Relational Mapper) / ODM (Object-Document Mapper) for the [Firebase Admin SDK](https://firebase.google.com/docs/admin/setup) in Node.js, built with TypeScript. Simplifies interacting with Firestore using classes, decorators, Zod validation, and relationship handling (DocumentReference).
 
 **Key Features:**

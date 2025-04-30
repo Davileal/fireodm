@@ -42,7 +42,7 @@
   "bugs": {
     "url": "https://github.com/Davileal/fireodm/issues"
   },
-  "homepage": "https://github.com/Davileal/fireodm#readme",
+  "homepage": "https://fireodm.netlify.app",
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",
     "@firebase/testing": "^0.20.11",
