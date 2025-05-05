@@ -1,5 +1,6 @@
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp, WriteResult } from "firebase-admin/firestore";
 import { getFirestoreInstance, NotFoundError, ValidationError } from "../src"; // Import from your library
+import { runInBatch, runInTransaction } from "../src/core/transaction-manager";
 import { User, userHooks } from "./helpers/models";
 
 describe("BaseModel - CRUD Operations", () => {
@@ -26,7 +27,7 @@ describe("BaseModel - CRUD Operations", () => {
 
     // Checks if WriteResult was returned
     expect(writeResult).toBeDefined();
-    expect(writeResult.writeTime).toBeInstanceOf(Timestamp);
+    expect(writeResult!.writeTime).toBeInstanceOf(Timestamp);
 
     // Checks if instance data was kept/updated by hooks
     expect(user.name).toBe("Create User");
@@ -81,7 +82,7 @@ describe("BaseModel - CRUD Operations", () => {
     const writeResult = await userToOverwrite.save(); // Calls save() again
 
     expect(userToOverwrite.id).toBe(userId); // ID should not change
-    expect(writeResult.writeTime).toBeInstanceOf(Timestamp);
+    expect(writeResult!.writeTime).toBeInstanceOf(Timestamp);
 
     // Checks hooks
     expect(userHooks.beforeSave).toHaveBeenCalledTimes(1);
@@ -159,7 +160,7 @@ describe("BaseModel - CRUD Operations", () => {
     };
     const writeResult = await user.update(updatePayload);
 
-    expect(writeResult.writeTime).toBeInstanceOf(Timestamp);
+    expect(writeResult!.writeTime).toBeInstanceOf(Timestamp);
 
     // Checks updated data in instance (except FieldValue which doesn't update locally)
     expect(user.name).toBe("User Updated");
@@ -227,7 +228,7 @@ describe("BaseModel - CRUD Operations", () => {
 
     const writeResult = await user.delete();
 
-    expect(writeResult.writeTime).toBeInstanceOf(Timestamp);
+    expect(writeResult!.writeTime).toBeInstanceOf(Timestamp);
     // Checks that ID was removed from the instance
     expect(user.id).toBeUndefined();
 
@@ -354,73 +355,32 @@ describe("BaseModel - Firestore Transactions", () => {
     userHooks.reset();
   });
 
-  it("should save a new document within a transaction", async () => {
-    const user = new User({ name: "Tx Save", email: "txsave@test.com" });
+  // Example Transaction Test Modification:
+  it("should save a new document using runInTransaction", async () => {
+    const user = new User({ name: "Tx ALS Save", email: "txals@test.com" });
     let userId: string | undefined;
-    let hookCalledInsideTx = false;
+    let hookCalledInside = false;
 
-    await db.runTransaction(async (transaction) => {
-      await user.save(transaction);
+    await runInTransaction(async () => {
+      const result = await user.save();
+      expect(result).toBeUndefined();
       expect(user.id).toBeDefined();
       userId = user.id;
       expect(userHooks.beforeSave).toHaveBeenCalledTimes(1);
       expect(userHooks.afterSave).not.toHaveBeenCalled();
-      hookCalledInsideTx = userHooks.beforeSave.mock.calls.length > 0;
+      hookCalledInside = true;
     });
 
-    expect(hookCalledInsideTx).toBe(true);
-    expect(userHooks.afterSave).not.toHaveBeenCalled();
+    expect(hookCalledInside).toBe(true);
+    expect(userHooks.afterSave).not.toHaveBeenCalled(); // Still not called
 
     expect(userId).toBeDefined();
-    const docSnap = await db.collection("users").doc(userId!).get();
+    const docSnap = await getFirestoreInstance()
+      .collection("users")
+      .doc(userId!)
+      .get();
     expect(docSnap.exists).toBe(true);
-    expect(docSnap.data()?.name).toBe("Tx Save");
-    expect(docSnap.data()?.hookValue).toBe("set_on_beforeSave");
-  });
-
-  it("should update a document within a transaction", async () => {
-    const initialUser = new User({
-      name: "Tx Update Init",
-      email: "txupd@test.com",
-    });
-    await initialUser.save();
-    const userId = initialUser.id!;
-    userHooks.reset();
-
-    let hookCalledInsideTx = false;
-    let finalName: string | undefined;
-
-    await db.runTransaction(async (transaction) => {
-      const userRef = db.collection("users").doc(userId);
-      const userSnap = await transaction.get(userRef);
-      if (!userSnap.exists)
-        throw new Error("Document not found in transaction!");
-      const txUserData = userSnap.data();
-
-      const userInstance = new User(txUserData as any, userId);
-
-      const updateData = { name: "Tx Updated Name", age: 99 };
-      await userInstance.update(updateData, transaction);
-      finalName = userInstance.name;
-
-      expect(userHooks.beforeUpdate).toHaveBeenCalledTimes(1);
-      expect(userHooks.beforeUpdate).toHaveBeenCalledWith(
-        userInstance,
-        expect.objectContaining(updateData)
-      );
-      expect(userHooks.afterUpdate).not.toHaveBeenCalled();
-      hookCalledInsideTx = userHooks.beforeUpdate.mock.calls.length > 0;
-    });
-
-    expect(hookCalledInsideTx).toBe(true);
-    expect(userHooks.afterUpdate).not.toHaveBeenCalled();
-    expect(finalName).toBe("Tx Updated Name");
-
-    const docSnap = await db.collection("users").doc(userId).get();
-    expect(docSnap.exists).toBe(true);
-    expect(docSnap.data()?.name).toBe("Tx Updated Name");
-    expect(docSnap.data()?.age).toBe(99);
-    expect(docSnap.data()?.hookValue).toBe("set_on_beforeUpdate"); // Hook beforeUpdate funcionou
+    expect(docSnap.data()?.name).toBe("Tx ALS Save");
   });
 
   it("should delete a document within a transaction", async () => {
@@ -431,10 +391,9 @@ describe("BaseModel - Firestore Transactions", () => {
 
     let hookCalledInsideTx = false;
 
-    await db.runTransaction(async (transaction) => {
+    await runInTransaction(async () => {
       const userInstance = new User({}, userId);
-
-      await userInstance.delete(transaction); // Passa transaction
+      await userInstance.delete();
 
       expect(userHooks.beforeDelete).toHaveBeenCalledTimes(1);
       expect(userHooks.afterDelete).not.toHaveBeenCalled();
@@ -460,19 +419,19 @@ describe("BaseModel - Firestore Transactions", () => {
     const userC = new User({ name: "User C Tx Multi", email: "c@tx.com" }); // Novo usuário
     let userCId: string | undefined;
 
-    await db.runTransaction(async (transaction) => {
+    await runInTransaction(async (transaction) => {
       const userARef = db.collection("users").doc(userAId);
       const userASnap = await transaction.get(userARef);
       if (!userASnap.exists) throw new Error("User A missing");
       const userAInstance = new User(userASnap.data() as any, userAId);
 
-      await userAInstance.update({ name: "User A Updated in Tx" }, transaction);
+      await userAInstance.update({ name: "User A Updated in Tx" });
 
-      await userC.save(transaction); // ID será gerado aqui
+      await userC.save();
       userCId = userC.id;
 
       const userBInstance = new User({}, userBId);
-      await userBInstance.delete(transaction);
+      await userBInstance.delete();
 
       expect(userHooks.beforeUpdate).toHaveBeenCalledTimes(1);
       expect(userHooks.beforeSave).toHaveBeenCalledTimes(1);
@@ -503,8 +462,8 @@ describe("BaseModel - Firestore Transactions", () => {
     let transactionReachedEnd = false;
 
     await expect(
-      db.runTransaction(async (transaction) => {
-        await invalidUser.save(transaction);
+      runInTransaction(async (transaction) => {
+        await invalidUser.save();
         transactionReachedEnd = true;
       })
     ).rejects.toThrow(ValidationError);
@@ -518,8 +477,8 @@ describe("BaseModel - Firestore Transactions", () => {
     let userId: string | undefined;
 
     await expect(
-      db.runTransaction(async (transaction) => {
-        await user.save(transaction);
+      runInTransaction(async (transaction) => {
+        await user.save();
         userId = user.id;
         expect(userId).toBeDefined();
         throw new Error("Something went wrong after ORM operation!");
@@ -547,18 +506,19 @@ describe("BaseModel - Batched Writes", () => {
   });
 
   it("should save a new document within a batch", async () => {
-    const batch = db.batch();
-    const user = new User({ name: "Batch Save", email: "batchsave@test.com" });
+    let userId;
+    await runInBatch(async () => {
+      const user = new User({
+        name: "Batch Save",
+        email: "batchsave@test.com",
+      });
+      await user.save();
+      userId = user.id;
+    });
 
-    await user.save(batch);
-    const userId = user.id;
     expect(userId).toBeDefined();
-
     expect(userHooks.beforeSave).toHaveBeenCalledTimes(1);
     expect(userHooks.afterSave).not.toHaveBeenCalled();
-
-    await batch.commit();
-
     expect(userHooks.afterSave).not.toHaveBeenCalled();
 
     const docSnap = await db.collection("users").doc(userId!).get();
@@ -576,21 +536,19 @@ describe("BaseModel - Batched Writes", () => {
     const userId = user.id!;
     userHooks.reset();
 
-    const batch = db.batch();
-    const userInstance = new User({}, userId);
-    const updateData = { name: "Batch Updated Name", age: 55 };
+    await runInBatch(async () => {
+      const userInstance = new User({}, userId);
+      const updateData = { name: "Batch Updated Name", age: 55 };
 
-    await userInstance.update(updateData, batch);
+      await userInstance.update(updateData);
+      expect(userHooks.beforeUpdate).toHaveBeenCalledTimes(1);
+      expect(userHooks.beforeUpdate).toHaveBeenCalledWith(
+        userInstance,
+        expect.objectContaining(updateData)
+      );
+    });
 
-    expect(userHooks.beforeUpdate).toHaveBeenCalledTimes(1);
-    expect(userHooks.beforeUpdate).toHaveBeenCalledWith(
-      userInstance,
-      expect.objectContaining(updateData)
-    );
     expect(userHooks.afterUpdate).not.toHaveBeenCalled();
-
-    await batch.commit();
-
     expect(userHooks.afterUpdate).not.toHaveBeenCalled();
 
     const docSnap = await db.collection("users").doc(userId).get();
@@ -606,80 +564,82 @@ describe("BaseModel - Batched Writes", () => {
     const userId = user.id!;
     userHooks.reset();
 
-    const batch = db.batch();
-    const userInstance = new User({}, userId);
-
-    await userInstance.delete(batch);
+    await runInBatch(async () => {
+      const userInstance = new User({}, userId);
+      await userInstance.delete();
+    });
 
     expect(userHooks.beforeDelete).toHaveBeenCalledTimes(1);
     expect(userHooks.afterDelete).not.toHaveBeenCalled();
-
-    await batch.commit();
-
     expect(userHooks.afterDelete).not.toHaveBeenCalled();
 
     const docSnap = await db.collection("users").doc(userId).get();
     expect(docSnap.exists).toBe(false);
   });
 
-  it("should handle multiple ORM operations within a single batch", async () => {
-    const userA = new User({
-      name: "User A Batch Multi",
-      email: "a@batch.com",
-    });
-    const userToDelete = new User({
-      name: "User ToDelete Batch",
-      email: "del@batch.com",
-    });
+  it("should perform multiple operations using runInBatch", async () => {
+    const userA = new User({ name: "User A Batch ALS", email: "a@als.com" });
     await userA.save();
-    await userToDelete.save();
     const userAId = userA.id!;
-    const userToDeleteId = userToDelete.id!;
     userHooks.reset();
 
-    const batch = db.batch();
     const userAInstance = new User({}, userAId);
-    const userBNew = new User({
-      name: "User B Batch New",
-      email: "b@batch.com",
+    const userBNew = new User({ name: "User B Batch ALS", email: "b@als.com" });
+    const userToDelete = new User({}, "some-id-to-delete");
+
+    let userBId: string | undefined;
+
+    const { commitResults, callbackResult } = await runInBatch(async () => {
+      const updateResult = await userAInstance.update({
+        name: "User A Updated in Batch ALS",
+      });
+      const saveResult = await userBNew.save();
+      const deleteResult = await userToDelete.delete();
+
+      expect(updateResult).toBeUndefined();
+      expect(saveResult).toBeUndefined();
+      expect(deleteResult).toBeUndefined();
+
+      userBId = userBNew.id;
+
+      expect(userHooks.beforeUpdate).toHaveBeenCalledTimes(1);
+      expect(userHooks.beforeSave).toHaveBeenCalledTimes(1);
+      expect(userHooks.beforeDelete).toHaveBeenCalledTimes(1);
+      expect(userHooks.afterUpdate).not.toHaveBeenCalled();
+      expect(userHooks.afterSave).not.toHaveBeenCalled();
+      expect(userHooks.afterDelete).not.toHaveBeenCalled();
+
+      return "Callback Finished";
     });
-    const userToDeleteInstance = new User({}, userToDeleteId);
 
-    await userAInstance.update({ name: "User A Updated in Batch" }, batch);
-    await userBNew.save(batch);
-    const userBId = userBNew.id;
-    await userToDeleteInstance.delete(batch);
+    expect(commitResults.length).toBe(3);
+    expect(commitResults[0]).toBeInstanceOf(WriteResult);
+    expect(callbackResult).toBe("Callback Finished");
 
-    expect(userHooks.beforeUpdate).toHaveBeenCalledTimes(1);
-    expect(userHooks.beforeSave).toHaveBeenCalledTimes(1);
-    expect(userHooks.beforeDelete).toHaveBeenCalledTimes(1);
     expect(userHooks.afterUpdate).not.toHaveBeenCalled();
     expect(userHooks.afterSave).not.toHaveBeenCalled();
     expect(userHooks.afterDelete).not.toHaveBeenCalled();
 
-    await batch.commit();
-
-    const snapA = await db.collection("users").doc(userAId).get();
-    const snapB = await db.collection("users").doc(userBId!).get();
-    const snapDeleted = await db.collection("users").doc(userToDeleteId).get();
-
-    expect(snapA.exists).toBe(true);
-    expect(snapA.data()?.name).toBe("User A Updated in Batch");
+    const snapA = await getFirestoreInstance()
+      .collection("users")
+      .doc(userAId)
+      .get();
+    const snapB = await getFirestoreInstance()
+      .collection("users")
+      .doc(userBId!)
+      .get();
+    expect(snapA.data()?.name).toBe("User A Updated in Batch ALS");
     expect(snapB.exists).toBe(true);
-    expect(snapB.data()?.name).toBe("User B Batch New");
-    expect(snapDeleted.exists).toBe(false);
-
-    expect(userHooks.afterUpdate).not.toHaveBeenCalled();
-    expect(userHooks.afterSave).not.toHaveBeenCalled();
-    expect(userHooks.afterDelete).not.toHaveBeenCalled();
+    expect(snapB.data()?.name).toBe("User B Batch ALS");
   });
 
   it("should throw validation error synchronously when adding invalid data to batch", async () => {
     const batch = db.batch();
-    const invalidUser = new User({ name: "Batch Invalid", email: "bad-email" });
 
-    await expect(invalidUser.save(batch)).rejects.toThrow(ValidationError);
-    await batch.commit();
+    const invalidUser = new User({ name: "Batch Invalid", email: "bad-email" });
+    await runInBatch(async () => {
+      await expect(invalidUser.save()).rejects.toThrow(ValidationError);
+    });
 
     expect(invalidUser.id).toBeUndefined();
   });

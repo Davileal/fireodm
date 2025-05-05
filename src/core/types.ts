@@ -67,12 +67,12 @@ export interface BaseModelConstructor<T extends BaseModel = any> {
 
 export interface BaseModelInterface {
   id?: string;
-  save(options?: SetOptions): Promise<WriteResult>;
+  save(options?: SetOptions): Promise<WriteResult | undefined>;
   update(
     this: this,
     updateData: PartialWithFieldValue<this> | UpdateData<this>
-  ): Promise<WriteResult>;
-  delete(): Promise<WriteResult>;
+  ): Promise<WriteResult | undefined>;
+  delete(): Promise<WriteResult | undefined>;
   reload<T extends BaseModel>(
     this: T,
     options?: Pick<FindOptions<T>, "populate">

@@ -51,4 +51,7 @@ export {
   WriteResult,
 } from "firebase-admin/firestore";
 
+export { runInTransaction, runInBatch } from "./core/transaction-manager";
+export type { BatchResult } from "./core/transaction-manager";
+
 export { z } from "zod";
