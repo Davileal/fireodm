@@ -17,6 +17,7 @@ import { BaseModel } from "./base-model";
 
 export interface FindOptions<T extends BaseModel> {
   populate?: (keyof T | string)[] | boolean;
+  populateSub?: string[];
   limit?: number;
   orderBy?: {
     field: keyof T | string | FieldPath;
@@ -37,6 +38,17 @@ export interface RelationMetadata<T extends BaseModel = any> {
   propertyName: string;
   relatedModel: () => BaseModelConstructor<T>;
   lazy: boolean;
+}
+
+export interface SubModelMetadata {
+  parentModel: () => BaseModelConstructor<any>
+  subPath: string
+}
+
+export interface SubCollectionMetadata<T extends BaseModel = any> {
+  propertyName: string;
+  name: string;
+  model: () => BaseModelConstructor<T>;
 }
 
 export interface BaseModelConstructor<T extends BaseModel = any> {

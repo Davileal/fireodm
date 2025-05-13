@@ -522,7 +522,9 @@ userRef?: DocumentReference<UserModel>;
 ## API (Main Exports)
 
 * `BaseModel`: Abstract base class for your models.  
-* `@Collection(name: string)`: Class decorator to set the collection name.  
+* `@Collection(name: string)`: Class decorator to set the collection name.
+* `@SubcollectionModel(name: string)`: Class decorator to set the subcollection name
+* `@Subcollection(property: string)`: Property decorator for subcollections.  
 * `@Relation(modelGetter: () => Constructor)`: Property decorator for `DocumentReference` relations.  
 * `setFirestoreInstance(db: Firestore)`: Function to initialize the library.  
 * `getFirestoreInstance()`: Gets the configured Firestore instance.  

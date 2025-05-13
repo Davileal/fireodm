@@ -6,6 +6,7 @@ export {
   ArrayField,
   BooleanField,
   Collection,
+  SubCollectionModel,
   DocumentReferenceField,
   EmailField,
   GeoPointField,
@@ -14,6 +15,7 @@ export {
   Relation,
   StringField,
   TimestampField,
+  SubCollection
 } from "./core/decorators";
 
 // --- Types and Interfaces ---
@@ -22,6 +24,8 @@ export type {
   FindAllResult,
   FindOptions,
   RelationMetadata,
+  SubModelMetadata,
+  SubCollectionMetadata
 } from "./core/types";
 
 // --- Errors ---

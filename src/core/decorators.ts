@@ -6,7 +6,12 @@ import {
 import "reflect-metadata";
 import { z, ZodTypeAny } from "zod";
 import { BaseModel } from "./base-model";
-import { BaseModelConstructor, RelationMetadata } from "./types"; // Import type from types.ts
+import {
+  BaseModelConstructor,
+  RelationMetadata,
+  SubModelMetadata,
+  SubCollectionMetadata,
+} from "./types"; // Import type from types.ts
 import { Validate } from "./validation";
 import DocumentReference = admin.firestore.DocumentReference;
 
@@ -14,6 +19,8 @@ export const COLLECTION_KEY = Symbol("collectionName");
 export const RELATION_KEY = Symbol("relations");
 export const TIMESTAMP_KEY = Symbol("timestamps");
 export const BOOLEAN_KEY = Symbol("booleans");
+export const SUBCOL_KEY = Symbol("subcollections");
+export const SUBMODEL_KEY = Symbol("subcollectionModel");
 
 /**
  * Class decorator to define the Firestore collection name for a model.
@@ -34,6 +41,37 @@ export function Collection(name: string) {
       );
     }
     Reflect.defineMetadata(COLLECTION_KEY, name, constructor);
+  };
+}
+
+export function SubCollectionModel(
+  parentGetter: () => BaseModelConstructor<any>,
+  subPath: string
+): ClassDecorator {
+  return (target) => {
+    // target here is the constructor function of GiftCard (whatever its signature)
+    Reflect.defineMetadata(
+      SUBMODEL_KEY,
+      { parentModel: parentGetter, subPath } as SubModelMetadata,
+      target
+    );
+  };
+}
+
+export function SubCollection<T extends BaseModel>(
+  modelGetter: () => BaseModelConstructor<T>,
+  name?: string
+) {
+  return (target: any, propertyName: string) => {
+    const ctor = target.constructor as Function;
+    const list: SubCollectionMetadata[] =
+      Reflect.getOwnMetadata(SUBCOL_KEY, ctor) || [];
+    list.push({
+      propertyName,
+      name: name ?? propertyName,
+      model: modelGetter,
+    });
+    Reflect.defineMetadata(SUBCOL_KEY, list, ctor);
   };
 }
 
@@ -172,7 +210,7 @@ export function BooleanField(
     if (opts.defaultValue) {
       const existing: any[] =
         Reflect.getOwnMetadata(BOOLEAN_KEY, target.constructor) || [];
-      existing.push({prop: propertyName, defaultValue: opts.defaultValue});
+      existing.push({ prop: propertyName, defaultValue: opts.defaultValue });
       Reflect.defineMetadata(BOOLEAN_KEY, existing, target.constructor);
     }
   };

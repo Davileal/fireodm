@@ -20,10 +20,13 @@ import {
 import "reflect-metadata";
 import { ZodError, ZodSchema } from "zod";
 import { getFirestoreInstance } from "../config/firestore-instance";
+import { transactionContext } from "./context";
 import {
   BOOLEAN_KEY,
   getCollectionName,
   getRelationMetadata,
+  SUBCOL_KEY,
+  SUBMODEL_KEY,
   TIMESTAMP_KEY,
 } from "./decorators";
 import { NotFoundError, ValidationError } from "./errors";
@@ -33,9 +36,10 @@ import {
   FindAllResult,
   FindOptions,
   RelationMetadata,
+  SubCollectionMetadata,
+  SubModelMetadata,
 } from "./types";
 import { getValidationSchema } from "./validation";
-import { transactionContext } from "./context";
 
 function isFirestoreTransaction(obj: any): obj is FirestoreTransaction {
   return (
@@ -68,11 +72,13 @@ export abstract class BaseModel implements BaseModelInterface {
     [key: string]: BaseModel | BaseModel[] | null;
   } = {};
 
-  constructor(data: Partial<Record<string, any>>, id?: string) {
-    Object.assign(this, data);
-    if (id) {
-      this.id = id;
+  constructor(data: Record<string, any>, idOrParent?: string | BaseModel) {
+    if (idOrParent instanceof BaseModel) {
+      (this as any).__parent = idOrParent;
+    } else if (typeof idOrParent === "string") {
+      this.id = idOrParent;
     }
+    Object.assign(this, data);
   }
 
   // --- Static methods ---
@@ -118,6 +124,34 @@ export abstract class BaseModel implements BaseModelInterface {
         return instance;
       },
     };
+  }
+
+  /**
+   * Get a typed CollectionReference for a named subcollection on this document.
+   */
+  async subcollection<Sub extends BaseModel>(
+    this: BaseModel,
+    prop: keyof this
+  ): Promise<Sub[]> {
+    const ctor = this._getConstructor();
+    const metas: SubCollectionMetadata[] =
+      Reflect.getOwnMetadata(SUBCOL_KEY, ctor) || [];
+
+    const meta = metas.find((m) => m.propertyName === (prop as string));
+    if (!meta) {
+      throw new Error(
+        `@SubCollection not defined for property "${String(prop)}" on ${ctor.name}`
+      );
+    }
+
+    const subColRef = this._getConstructor<Sub>()
+      .getCollectionRef()
+      .doc(this.id!)
+      .collection(meta.name)
+      .withConverter(meta.model()._getFirestoreConverter());
+
+    const snapshot = await subColRef.get();
+    return snapshot.docs.map((d) => d.data());
   }
 
   static _fromFirestore<T extends BaseModel>(
@@ -178,30 +212,42 @@ export abstract class BaseModel implements BaseModelInterface {
       const docRef = this.getCollectionRef().doc(id);
       const docSnap = await docRef.get();
 
-      // _fromFirestore handles instance creation and afterLoad hook
       const instance = this._fromFirestore(docSnap);
-
       if (!instance) return null;
 
-      const meta = this._getRelationMetadata();
-      const eagerFields = meta
+      const relMeta = this._getRelationMetadata();
+      const eagerRels = relMeta
         .filter((m) => !m.lazy)
-        .map((m) => m.propertyName);
+        .map((m) => m.propertyName as keyof T);
 
       if (options?.populate) {
         await instance.populate(options.populate as any);
-      } else if (eagerFields.length) {
-        await instance.populate(eagerFields as any);
+      } else if (eagerRels.length) {
+        await instance.populate(eagerRels as any);
+      }
+
+      const subMetas: SubCollectionMetadata[] =
+        Reflect.getOwnMetadata(SUBCOL_KEY, this) || [];
+      const eagerSubs = subMetas.map((m) => m.propertyName as keyof T);
+      const subsToPopulate = options?.populateSub?.length
+        ? options.populateSub
+        : eagerSubs;
+
+      for (const propName of subsToPopulate || []) {
+        const meta = subMetas.find(
+          (m) => m.propertyName === (propName as string)
+        );
+        if (!meta) continue;
+
+        const items = await instance.subcollection(propName as keyof T);
+        (instance as any)[propName] = items;
       }
 
       return instance;
     } catch (error) {
-      // Don't log generic errors here, let the caller handle or log specific cases
       if ((error as any)?.code === 5) {
-        // Firestore 'NOT_FOUND' gRPC code
-        return null; // Standard behavior: return null if not found
+        return null;
       }
-      // Re-throw other errors
       throw error;
     }
   }
@@ -214,12 +260,9 @@ export abstract class BaseModel implements BaseModelInterface {
   ): Promise<FindAllResult<T>> {
     try {
       let query: Query<T> = this.getCollectionRef();
-
       if (options?.queryFn) {
         query = options.queryFn(this.getCollectionRef());
       }
-
-      // Apply ordering if specified, or default if using pagination cursors
       if (options?.orderBy) {
         query = query.orderBy(
           options.orderBy.field as string,
@@ -231,55 +274,54 @@ export abstract class BaseModel implements BaseModelInterface {
         options?.endBefore ||
         options?.endAt
       ) {
-        // Cursors require an orderBy clause. Default to document ID.
         query = query.orderBy(FieldPath.documentId());
-        // Warn if orderBy is missing when using cursors?
-        // console.warn("Using pagination cursors without explicit orderBy. Defaulting to orderBy document ID.");
       }
-
-      // Apply cursors
       if (options?.startAfter) query = query.startAfter(options.startAfter);
       if (options?.startAt) query = query.startAt(options.startAt);
       if (options?.endBefore) query = query.endBefore(options.endBefore);
       if (options?.endAt) query = query.endAt(options.endAt);
-
-      // Apply limit
-      if (options?.limit) {
-        query = query.limit(options.limit);
-      }
+      if (options?.limit) query = query.limit(options.limit);
 
       const snapshot = await query.get();
       const results: T[] = [];
 
-      if (!snapshot.empty) {
-        for (const doc of snapshot.docs) {
-          // Converter calls _fromFirestore -> creates instance and calls afterLoad
-          const instance = doc.data(); // Gets instance via converter
+      for (const doc of snapshot.docs) {
+        const instance = doc.data();
+        if (!instance) continue;
 
-          if (!instance) continue;
+        const relMeta = this._getRelationMetadata();
+        const eagerRels = relMeta
+          .filter((m) => !m.lazy)
+          .map((m) => m.propertyName as keyof T);
 
-          const meta = this._getRelationMetadata();
-          const eagerFields = meta
-            .filter((m) => !m.lazy)
-            .map((m) => m.propertyName);
-
-          if (options?.populate) {
-            await instance.populate(options.populate as any);
-          } else if (eagerFields.length) {
-            await instance.populate(eagerFields as any);
-          }
-
-          results.push(instance);
+        if (options?.populate) {
+          await instance.populate(options.populate as any);
+        } else if (eagerRels.length) {
+          await instance.populate(eagerRels as any);
         }
+
+        const subMetas: SubCollectionMetadata[] =
+          Reflect.getOwnMetadata(SUBCOL_KEY, this) || [];
+        const eagerSubs = subMetas.map((m) => m.propertyName as keyof T);
+        const subsToPopulate = options?.populateSub?.length
+          ? options.populateSub
+          : eagerSubs;
+
+        if (subsToPopulate && subsToPopulate.length) {
+          for (const propName of subsToPopulate) {
+            const items = await instance.subcollection(propName as keyof T);
+            (instance as any)[propName] = items;
+          }
+        }
+
+        results.push(instance);
       }
 
       return {
-        results: results,
-        lastVisible: snapshot.docs[snapshot.docs.length - 1], // Can be undefined if empty
-        // totalCount: snapshot.size // This is count of *this page*, not total docs matching query
-      };
+        results,
+        lastVisible: snapshot.docs[snapshot.docs.length - 1],
+      } as FindAllResult<T>;
     } catch (error) {
-      // Let caller handle errors
       throw error;
     }
   }
@@ -330,17 +372,39 @@ export abstract class BaseModel implements BaseModelInterface {
   }
 
   protected _getDocRef(): DocumentReference<DocumentData> {
-    const constructor = this._getConstructor();
+    const ctor = this._getConstructor();
+    const meta = Reflect.getOwnMetadata(SUBMODEL_KEY, ctor) as
+      | SubModelMetadata
+      | undefined;
+
+    if (meta) {
+      const parent = (this as any).__parent as BaseModel;
+      if (!parent?.id) {
+        throw new Error(
+          `Cannot save submodel ${ctor.name} without a parent instance having an ID.`
+        );
+      }
+      const subColl = parent
+        ._getCollectionRef()
+        .doc(parent.id)
+        .collection(meta.subPath);
+
+      if (!this.id) {
+        const ref = subColl.doc();
+        this.id = ref.id;
+        return ref;
+      }
+      return subColl.doc(this.id);
+    }
+
     const rawCollectionRef = getFirestoreInstance().collection(
-      constructor._getCollectionName()
+      ctor._getCollectionName()
     );
     if (!this.id) {
-      // Generate ref *without* converter if ID is missing
       const ref = rawCollectionRef.doc();
       this.id = ref.id;
       return ref;
     }
-    // Return ref *without* converter for set/update/delete operations
     return rawCollectionRef.doc(this.id);
   }
 
@@ -536,16 +600,27 @@ export abstract class BaseModel implements BaseModelInterface {
    * @returns A Promise resolving with the `WriteResult` for direct operations, or `undefined` if executed within a transaction/batch context.
    * @throws {ValidationError} If validation against the static schema fails.
    */
-  async save(options?: SetOptions): Promise<WriteResult | undefined> { // <--- Changed return type
+  async save(options?: SetOptions): Promise<WriteResult | undefined> {
+    // <--- Changed return type
     const constructor = this._getConstructor();
     const currentContext = transactionContext.getStore(); // <--- Get context
     const isTransactional = currentContext !== undefined;
 
     // --- Defaults and Hooks ---
-    const defaultsTimestamps: string[] = Reflect.getOwnMetadata(TIMESTAMP_KEY, this.constructor) || [];
-    for (const prop of defaultsTimestamps) { if ((this as any)[prop] == null) { (this as any)[prop] = Timestamp.now(); } }
-    const defaultsBoolean: any[] = Reflect.getOwnMetadata(BOOLEAN_KEY, this.constructor) || [];
-    for (const defaultBoolean of defaultsBoolean) { if ((this as any)[defaultBoolean.prop] == null) { (this as any)[defaultBoolean.prop] = defaultBoolean.defaultValue; } }
+    const defaultsTimestamps: string[] =
+      Reflect.getOwnMetadata(TIMESTAMP_KEY, this.constructor) || [];
+    for (const prop of defaultsTimestamps) {
+      if ((this as any)[prop] == null) {
+        (this as any)[prop] = Timestamp.now();
+      }
+    }
+    const defaultsBoolean: any[] =
+      Reflect.getOwnMetadata(BOOLEAN_KEY, this.constructor) || [];
+    for (const defaultBoolean of defaultsBoolean) {
+      if ((this as any)[defaultBoolean.prop] == null) {
+        (this as any)[defaultBoolean.prop] = defaultBoolean.defaultValue;
+      }
+    }
     await this.beforeSave(options); // Always run beforeSave
 
     // --- Prepare and Validate Data ---
@@ -572,7 +647,10 @@ export abstract class BaseModel implements BaseModelInterface {
         await this.afterSave(result, options); // Run afterSave ONLY for direct ops
         return result; // <--- Return WriteResult
       } catch (error) {
-        console.error(`[${constructor.name}] Error saving document (ID: ${this.id}):`, error);
+        console.error(
+          `[${constructor.name}] Error saving document (ID: ${this.id}):`,
+          error
+        );
         throw error;
       }
     }
@@ -590,7 +668,9 @@ export abstract class BaseModel implements BaseModelInterface {
    */
   async update(updateData: UpdateData<this>): Promise<WriteResult | undefined> {
     if (!this.id) {
-      throw new Error("Cannot update document without an ID. Use save() or ensure the instance has an ID.");
+      throw new Error(
+        "Cannot update document without an ID. Use save() or ensure the instance has an ID."
+      );
     }
     const constructor = this._getConstructor();
     const currentContext = transactionContext.getStore(); // <--- Get context
@@ -602,17 +682,34 @@ export abstract class BaseModel implements BaseModelInterface {
     const relationProperties = new Set(relationMeta.map((r) => r.propertyName));
     // ... (same cleaning logic as before) ...
     for (const key in updateData) {
-        if ( key === "id" || key.startsWith("_") || typeof (this as any)[key] === "function" || !Object.prototype.hasOwnProperty.call(updateData, key) ) { continue; }
-        const value = (updateData as any)[key];
-        if (value instanceof FieldValue) { cleanUpdateData[key] = value; }
-        else if ( relationProperties.has(key) && (value === null || value instanceof DocumentReference)) { cleanUpdateData[key] = value; }
-        else if (!relationProperties.has(key) && value === null) { cleanUpdateData[key] = null; }
-        else if (!relationProperties.has(key) && value !== undefined) { cleanUpdateData[key] = value instanceof Date ? Timestamp.fromDate(value) : value; }
+      if (
+        key === "id" ||
+        key.startsWith("_") ||
+        typeof (this as any)[key] === "function" ||
+        !Object.prototype.hasOwnProperty.call(updateData, key)
+      ) {
+        continue;
+      }
+      const value = (updateData as any)[key];
+      if (value instanceof FieldValue) {
+        cleanUpdateData[key] = value;
+      } else if (
+        relationProperties.has(key) &&
+        (value === null || value instanceof DocumentReference)
+      ) {
+        cleanUpdateData[key] = value;
+      } else if (!relationProperties.has(key) && value === null) {
+        cleanUpdateData[key] = null;
+      } else if (!relationProperties.has(key) && value !== undefined) {
+        cleanUpdateData[key] =
+          value instanceof Date ? Timestamp.fromDate(value) : value;
+      }
     }
 
-
     if (Object.keys(cleanUpdateData).length === 0) {
-      console.warn(`[${constructor.name}] Update called with no valid fields to update for ID ${this.id}.`);
+      console.warn(
+        `[${constructor.name}] Update called with no valid fields to update for ID ${this.id}.`
+      );
       return isTransactional ? undefined : ({} as WriteResult); // Return undefined or empty WR
     }
 
@@ -642,7 +739,10 @@ export abstract class BaseModel implements BaseModelInterface {
         await this.afterUpdate(result, cleanUpdateData); // Run afterUpdate ONLY for direct ops
         return result; // <--- Return WriteResult
       } catch (error) {
-        console.error(`[${constructor.name}] Error updating document (ID: ${this.id}):`, error);
+        console.error(
+          `[${constructor.name}] Error updating document (ID: ${this.id}):`,
+          error
+        );
         throw error;
       }
     }
@@ -690,7 +790,10 @@ export abstract class BaseModel implements BaseModelInterface {
         await this.afterDelete(result, originalId); // Run afterDelete ONLY for direct ops
         return result; // <--- Return WriteResult
       } catch (error) {
-        console.error(`[${constructor.name}] Error deleting document (ID: ${originalId}):`, error);
+        console.error(
+          `[${constructor.name}] Error deleting document (ID: ${originalId}):`,
+          error
+        );
         throw error;
       }
     }
