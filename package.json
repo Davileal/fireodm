@@ -1,6 +1,6 @@
 {
   "name": "fireodm",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "A basic and extensible ODM for the Firestore Admin SDK in Node.js with decorators, relationships, and validation.",
   "main": "dist/index.js",
   "module": "dist/esm/index.js",
