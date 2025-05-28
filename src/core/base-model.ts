@@ -153,7 +153,11 @@ export abstract class BaseModel implements BaseModelInterface {
       .withConverter(meta.model()._getFirestoreConverter());
 
     const snap = await childCol.get();
-    return snap.docs.map((d) => d.data());
+    return snap.docs.map((d) => {
+      const inst = d.data() as Sub;
+      (inst as any).__parent = this;
+      return inst;
+    });
   }
 
   static _fromFirestore<T extends BaseModel>(
@@ -836,6 +840,17 @@ export abstract class BaseModel implements BaseModelInterface {
     });
 
     return this;
+  }
+
+  /**
+   * Express/etc will call toJSON() under the hood,
+   * and the payload will only contain the real fields.
+   */
+  toJSON(): Record<string, any> {
+    const out: Record<string, any> = {};
+    if (this.id != null) out.id = this.id;
+    Object.assign(out, this._toFirestore(false));
+    return out;
   }
 
   private _updateLocalState(
