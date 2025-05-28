@@ -2,31 +2,22 @@
     "version": "0.2.0",
     "configurations": [
       {
-        "name": "🔍 Debug",
-        "type": "node",
-        "request": "launch",
-        "cwd": "${workspaceFolder}/examples",
-        "runtimeArgs": [
-          "-r",
-          "ts-node/register"
-        ],
-        "args": [
-          "index.ts"
-        ],
-        "sourceMaps": true,
-        "outFiles": [
-          "${workspaceFolder}/examples/**/*.ts"
-        ]
-      },
-      {
         "name": "🧪 Jest Debug",
         "type": "node",
         "request": "launch",
-        "cwd": "${workspaceFolder}/tests/",
         "runtimeExecutable": "npm",
-        "runtimeArgs": ["run", "test"],
-        "console": "integratedTerminal"
-      },
+        "runtimeArgs": [
+          "run",
+          "test"
+        ],
+        "cwd": "${workspaceFolder}",
+        "console": "integratedTerminal",
+        "internalConsoleOptions": "neverOpen",
+        "sourceMaps": true,
+        "outFiles": [
+          "${workspaceFolder}/dist/**/*.js",
+          "${workspaceFolder}/src/**/*.ts"
+        ]
+      }
     ]
-  }
-  
+}

@@ -75,6 +75,9 @@ export abstract class BaseModel implements BaseModelInterface {
   constructor(data: Record<string, any>, idOrParent?: string | BaseModel) {
     if (idOrParent instanceof BaseModel) {
       (this as any).__parent = idOrParent;
+      if ((idOrParent as any).__parent) {
+        (this as any).__parent.__parent = (idOrParent as any).__parent;
+      }
     } else if (typeof idOrParent === "string") {
       this.id = idOrParent;
     }
@@ -130,28 +133,27 @@ export abstract class BaseModel implements BaseModelInterface {
    * Get a typed CollectionReference for a named subcollection on this document.
    */
   async subcollection<Sub extends BaseModel>(
-    this: BaseModel,
+    this: this,
     prop: keyof this
   ): Promise<Sub[]> {
-    const ctor = this._getConstructor();
-    const metas: SubCollectionMetadata[] =
-      Reflect.getOwnMetadata(SUBCOL_KEY, ctor) || [];
-
-    const meta = metas.find((m) => m.propertyName === (prop as string));
+    const ctor = this.constructor as Function;
+    const metas = (Reflect.getOwnMetadata(SUBCOL_KEY, ctor) ||
+      []) as SubCollectionMetadata[];
+    const meta = metas.find((m) => m.propertyName === prop);
     if (!meta) {
       throw new Error(
         `@SubCollection not defined for property "${String(prop)}" on ${ctor.name}`
       );
     }
 
-    const subColRef = this._getConstructor<Sub>()
-      .getCollectionRef()
-      .doc(this.id!)
+    const parentDocRef = this._getDocRef();
+
+    const childCol = parentDocRef
       .collection(meta.name)
       .withConverter(meta.model()._getFirestoreConverter());
 
-    const snapshot = await subColRef.get();
-    return snapshot.docs.map((d) => d.data());
+    const snap = await childCol.get();
+    return snap.docs.map((d) => d.data());
   }
 
   static _fromFirestore<T extends BaseModel>(
@@ -384,10 +386,8 @@ export abstract class BaseModel implements BaseModelInterface {
           `Cannot save submodel ${ctor.name} without a parent instance having an ID.`
         );
       }
-      const subColl = parent
-        ._getCollectionRef()
-        .doc(parent.id)
-        .collection(meta.subPath);
+      const parentDocRef = parent._getDocRef();
+      const subColl = parentDocRef.collection(meta.subPath);
 
       if (!this.id) {
         const ref = subColl.doc();

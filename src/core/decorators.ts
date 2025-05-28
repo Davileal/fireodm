@@ -124,13 +124,21 @@ export function Relation<T extends BaseModel>(
 
 /** @internal Gets the collection name from metadata, searching prototype chain. */
 export function getCollectionName(target: Function): string | undefined {
-  let currentTarget = target;
-  while (currentTarget && currentTarget !== Object.prototype) {
-    const name = Reflect.getOwnMetadata(COLLECTION_KEY, currentTarget);
-    if (name) {
-      return name;
+  let current: any = target;
+  while (current && current !== Object.prototype) {
+    const top = Reflect.getOwnMetadata(COLLECTION_KEY, current);
+    if (typeof top === 'string') {
+      return top;
     }
-    currentTarget = Object.getPrototypeOf(currentTarget);
+
+    const sub = Reflect.getOwnMetadata(SUBMODEL_KEY, current) as
+      | SubModelMetadata
+      | undefined;
+    if (sub) {
+      return sub.subPath;
+    }
+
+    current = Object.getPrototypeOf(current);
   }
   return undefined;
 }

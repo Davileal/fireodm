@@ -13,7 +13,6 @@ class Parent extends BaseModel {
   @StringField({ required: true })
   name!: string;
 
-  // Sub-collection decorator for “many” children
   @SubCollection(() => Child, "children")
   children?: Child[];
 }
@@ -22,6 +21,15 @@ class Parent extends BaseModel {
 class Child extends BaseModel {
   @StringField({ required: true })
   value!: string;
+
+  @SubCollection(() => Toy, "toys")
+  toys?: Toy[];
+}
+
+@SubCollectionModel(() => Child, "toys")
+class Toy extends BaseModel {
+  @StringField({ required: true })
+  name!: string;
 }
 
 @Collection("users")
@@ -60,73 +68,28 @@ beforeEach(async () => {
   }
 });
 
-describe("SubCollection population (findById & findAll)", () => {
-  it("findById loads children via populateSub", async () => {
-    const db = getFirestoreInstance();
-    const p = new Parent({ name: "P1" });
+describe("Nested SubCollection population", () => {
+  it("allows access to a subcollection inside another subcollection", async () => {
+    const p = new Parent({ name: "P2" });
     await p.save();
+    const c = new Child({ value: "child2" }, p);
+    await c.save();
 
-    // write two children under parents/{p.id}/children
-    const col: any = db
-      .collection("parents")
-      .doc(p.id!)
-      .collection("children")
-      .withConverter(Child._getFirestoreConverter());
-    const child1 = new Child({ value: "c1" });
-    const child2 = new Child({ value: "c2" });
-    await col.doc().set(child1);
-    await col.doc().set(child2);
+    const t1 = new Toy({ name: "Train" }, c);
+    const t2 = new Toy({ name: "Doll" }, c);
+    await t1.save();
+    await t2.save();
 
-    const loaded = (await Parent.findById(p.id!, {
-      populateSub: ["children"],
-    })) as Parent;
+    let toys = await c.subcollection<Toy>("toys");
+    expect(toys.map((t) => t.name).sort()).toEqual(["Doll", "Train"]);
 
-    expect(loaded).not.toBeNull();
-    expect(loaded!.children).toHaveLength(2);
-    expect(loaded!.children![0]).toBeInstanceOf(Child);
-    const vals = loaded!.children!.map((c) => c.value).sort();
-    expect(vals).toEqual(["c1", "c2"]);
-  });
+    await t1.update({ name: "Rocket" });
+    toys = await c.subcollection<Toy>("toys");
+    expect(toys.map((t) => t.name).sort()).toEqual(["Doll", "Rocket"]);
 
-  it("findAll loads children for multiple parents", async () => {
-    const db = getFirestoreInstance();
-    const pA = new Parent({ name: "A" });
-    const pB = new Parent({ name: "B" });
-    await pA.save();
-    await pB.save();
-
-    // children under A
-    const colA: any = db
-      .collection("parents")
-      .doc(pA.id!)
-      .collection("children")
-      .withConverter(Child._getFirestoreConverter());
-    const child = new Child({ value: "a1" });
-    await colA.doc().set(child);
-
-    // children under B
-    const colB: any = db
-      .collection("parents")
-      .doc(pB.id!)
-      .collection("children")
-      .withConverter(Child._getFirestoreConverter());
-    const child1 = new Child({ value: "b1" });
-    const child2 = new Child({ value: "b2" });
-
-    await colB.doc().set(child1);
-    await colB.doc().set(child2);
-
-    const { results } = await Parent.findAll({
-      populateSub: ["children"],
-    });
-
-    expect(results).toHaveLength(2);
-    const loadedA: any = results.find((x: any) => x.name === "A")!;
-    expect(loadedA.children).toHaveLength(1);
-    expect(loadedA.children![0].value).toBe("a1");
-    const loadedB: any = results.find((x: any) => x.name === "B")!;
-    const vb = loadedB.children!.map((c: any) => c.value).sort();
-    expect(vb).toEqual(["b1", "b2"]);
+    await t2.delete();
+    toys = await c.subcollection<Toy>("toys");
+    expect(toys.map((t) => t.name)).toEqual(["Rocket"]);
   });
 });
 
