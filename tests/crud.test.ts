@@ -321,15 +321,30 @@ describe("BaseModel - CRUD Operations", () => {
     );
   });
 
-  it("should handle validation errors on save()", async () => {
-    const invalidUserData = { name: "Valid Name", email: "invalid-email" }; // Invalid email
-    const user = new User(invalidUserData);
+it("should handle validation errors on save()", async () => {
+    const userWithInvalidEmail = { name: "Valid Name", email: "invalid-email" }; // Invalid email
+    const user1 = new User(userWithInvalidEmail);
 
-    await expect(user.save()).rejects.toThrow(ValidationError);
-    await expect(user.save()).rejects.toThrow(/Validation failed.*email/); // Checks that message contains 'email'
+    await expect(user1.save()).rejects.toThrow(ValidationError);
+    await expect(user1.save()).rejects.toThrow(/Validation failed.*email/); // Checks that message contains 'email'
 
     // Checks that user was not saved
-    expect(user.id).toBeUndefined();
+    expect(user1.id).toBeUndefined();
+    // Checks that afterSave was not called
+    expect(userHooks.afterSave).not.toHaveBeenCalled();
+
+    const userWithInvalidEnum = {
+      name: "Valid Name",
+      email: "user@localhost.com",
+      status: "invalid-enum-status" as any,
+    }; // Invalid enum
+    const user2 = new User(userWithInvalidEnum);
+
+    await expect(user2.save()).rejects.toThrow(ValidationError);
+    await expect(user2.save()).rejects.toThrow(/Validation failed.*status/); // Checks that message contains 'status'
+
+    // Checks that user was not saved
+    expect(user2.id).toBeUndefined();
     // Checks that afterSave was not called
     expect(userHooks.afterSave).not.toHaveBeenCalled();
   });
