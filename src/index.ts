@@ -15,6 +15,7 @@ export {
   Relation,
   StringField,
   TimestampField,
+  EnumField,
   SubCollection
 } from "./core/decorators";
 
