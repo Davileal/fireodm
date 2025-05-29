@@ -12,6 +12,7 @@ import {
   BooleanField,
   DocumentReferenceField,
   EmailField,
+  EnumField,
   NumberField,
   StringField,
   TimestampField,
@@ -44,6 +45,12 @@ export const userHooks = {
       if (typeof fn === "function" && "mockClear" in fn) fn.mockClear();
     });
   },
+};
+
+export enum UserStatusEnum {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+  PENDING = 'PENDING'
 };
 
 @Collection("users")
@@ -85,6 +92,9 @@ export class User extends BaseModel {
   @DocumentReferenceField({ required: false })
   @Relation(() => User)
   manager?: DocumentReference | User | null;
+
+  @EnumField(UserStatusEnum, { required: true, defaultValue: UserStatusEnum.ACTIVE })
+  status!: UserStatusEnum;
 
   constructor(data: Partial<User>, id?: string) {
     super(data, id);
