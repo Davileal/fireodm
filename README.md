@@ -11,11 +11,13 @@
 
 [Documentation](https://fireodm.netlify.app)
 
+A basic, extensible ORM (Object-Relational Mapper) / ODM (Object-Document Mapper) for the [Firebase Admin SDK](https://firebase.google.com/docs/admin/setup) in Node.js, built with TypeScript. Simplifies interacting with Firestore using classes, decorators, Zod validation, and relationship handling (DocumentReference).
+
 ## Contributors
 
 Thanks to everyone who has contributed to this project! Below are some of our amazing contributors:
 
-<table style="margin-bottom: 4rem;">
+<table>
   <tr>
     <td align="center">
       <a href="https://github.com/Davileal">
@@ -41,9 +43,8 @@ Thanks to everyone who has contributed to this project! Below are some of our am
   </tr>
 </table>
 
-A basic, extensible ORM (Object-Relational Mapper) / ODM (Object-Document Mapper) for the [Firebase Admin SDK](https://firebase.google.com/docs/admin/setup) in Node.js, built with TypeScript. Simplifies interacting with Firestore using classes, decorators, Zod validation, and relationship handling (DocumentReference).
 
-**Key Features:**
+## Key Features
 
 - **Model Definition with Classes:** Use TypeScript classes to define your data structures.
 - **Decorators (`@Collection`, `@Relation`):** Declare metadata in a clear, declarative way.
