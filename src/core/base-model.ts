@@ -58,11 +58,12 @@ function isWriteBatch(obj: any): obj is WriteBatch {
 
 export abstract class BaseModel implements BaseModelInterface {
   public id?: string;
+  private __parent?: BaseModel;
 
   private static _builtSchema?: ZodSchema<any>;
   static get schema(): ZodSchema<any> {
     if (!this._builtSchema) {
-      this._builtSchema = getValidationSchema(this as any);
+      this._builtSchema = getValidationSchema(this as BaseModelConstructor);
     }
     return this._builtSchema;
   }
@@ -74,9 +75,9 @@ export abstract class BaseModel implements BaseModelInterface {
 
   constructor(data: Record<string, any>, idOrParent?: string | BaseModel) {
     if (idOrParent instanceof BaseModel) {
-      (this as any).__parent = idOrParent;
-      if ((idOrParent as any).__parent) {
-        (this as any).__parent.__parent = (idOrParent as any).__parent;
+      this.__parent = idOrParent;
+      if (idOrParent.__parent) {
+        this.__parent.__parent = idOrParent.__parent;
       }
     } else if (typeof idOrParent === "string") {
       this.id = idOrParent;
@@ -100,7 +101,7 @@ export abstract class BaseModel implements BaseModelInterface {
     return getRelationMetadata(this);
   }
 
-  static getCollectionRef<T extends BaseModel>(
+  static getCollectionRef<T extends typeof BaseModel>(
     this: BaseModelConstructor<T>
   ): CollectionReference<T> {
     const db = getFirestoreInstance();
@@ -110,7 +111,7 @@ export abstract class BaseModel implements BaseModelInterface {
   }
 
   static _getFirestoreConverter<T extends BaseModel>(
-    this: BaseModelConstructor<T>
+    this: BaseModelConstructor
   ): FirestoreDataConverter<T> {
     const Self = this;
     return {
@@ -160,10 +161,10 @@ export abstract class BaseModel implements BaseModelInterface {
     });
   }
 
-  static _fromFirestore<T extends BaseModel>(
-    this: BaseModelConstructor<T>,
+  static _fromFirestore<T extends typeof BaseModel>(
+    this: T & BaseModelConstructor,
     snapshot: DocumentSnapshot | QueryDocumentSnapshot
-  ): T | null {
+  ): InstanceType<T> | null {
     if (!snapshot.exists) {
       return null;
     }
@@ -186,7 +187,7 @@ export abstract class BaseModel implements BaseModelInterface {
     }
 
     // Create the instance with non-relational data
-    const instance = new this(instanceData, snapshot.id);
+    const instance = new (this as BaseModelConstructor)(instanceData, snapshot.id);
 
     // Now, assign DocumentReferences for relations directly to the instance
     relationMeta.forEach((meta) => {
@@ -209,11 +210,11 @@ export abstract class BaseModel implements BaseModelInterface {
     return instance;
   }
 
-  static async findById<T extends BaseModel>(
-    this: BaseModelConstructor<T>,
+  static async findById<T extends typeof BaseModel>(
+    this: T & BaseModelConstructor,
     id: string,
-    options?: FindOptions<T>
-  ): Promise<T | null> {
+    options?: FindOptions
+  ): Promise<InstanceType<T> | null> {
     try {
       const docRef = this.getCollectionRef().doc(id);
       const docSnap = await docRef.get();
@@ -245,7 +246,7 @@ export abstract class BaseModel implements BaseModelInterface {
         );
         if (!meta) continue;
 
-        const items = await instance.subcollection(propName as keyof T);
+        const items = await instance.subcollection(propName as keyof InstanceType<T>);
         (instance as any)[propName] = items;
       }
 
@@ -258,14 +259,12 @@ export abstract class BaseModel implements BaseModelInterface {
     }
   }
 
-  static async findAll<T extends BaseModel>(
-    this: BaseModelConstructor<T>,
-    options?: FindOptions<T> & {
-      queryFn?: (ref: CollectionReference<T>) => Query<T>;
-    }
-  ): Promise<FindAllResult<T>> {
+  static async findAll<T extends typeof BaseModel>(
+    this: T & BaseModelConstructor,
+    options?: FindOptions
+  ): Promise<FindAllResult<InstanceType<T>>> {
     try {
-      let query: Query<T> = this.getCollectionRef();
+      let query: Query = this.getCollectionRef();
       if (options?.queryFn) {
         query = options.queryFn(this.getCollectionRef());
       }
@@ -289,7 +288,7 @@ export abstract class BaseModel implements BaseModelInterface {
       if (options?.limit) query = query.limit(options.limit);
 
       const snapshot = await query.get();
-      const results: T[] = [];
+      const results = [];
 
       for (const doc of snapshot.docs) {
         const instance = doc.data();
@@ -326,19 +325,19 @@ export abstract class BaseModel implements BaseModelInterface {
       return {
         results,
         lastVisible: snapshot.docs[snapshot.docs.length - 1],
-      } as FindAllResult<T>;
+      } as FindAllResult<InstanceType<T>>;
     } catch (error) {
       throw error;
     }
   }
 
-  static async findWhere<T extends BaseModel, K extends keyof T>(
-    this: BaseModelConstructor<T>,
+  static async findWhere<T extends typeof BaseModel, K extends keyof T>(
+    this: T & BaseModelConstructor,
     field: K | string | FieldPath, // Allow string or FieldPath
     operator: WhereFilterOp,
     value: any,
-    options?: FindOptions<T>
-  ): Promise<T[]> {
+    options?: FindOptions
+  ): Promise<InstanceType<T>[]> {
     const result = await this.findAll({
       ...options,
       queryFn: (ref) => ref.where(field as string | FieldPath, operator, value),
@@ -346,12 +345,12 @@ export abstract class BaseModel implements BaseModelInterface {
     return result.results; // Return only array for simplicity/consistency
   }
 
-  static async findOne<T extends BaseModel>(
-    this: BaseModelConstructor<T>,
+  static async findOne<T extends typeof BaseModel>(
+    this: T & BaseModelConstructor,
     queryFn: (ref: CollectionReference<T>) => Query<T>,
-    options?: Pick<FindOptions<T>, "populate">
-  ): Promise<T | null> {
-    const findOptions: FindOptions<T> & {
+    options?: Pick<FindOptions, "populate">
+  ): Promise<InstanceType<T> | null> {
+    const findOptions: FindOptions & {
       queryFn: (ref: CollectionReference<T>) => Query<T>;
     } = {
       queryFn: (ref) => queryFn(ref).limit(1),
@@ -369,11 +368,13 @@ export abstract class BaseModel implements BaseModelInterface {
 
   // --- Instance Methods ---
 
-  protected _getConstructor<T extends BaseModel>(): BaseModelConstructor<T> {
+  protected _getConstructor<
+    T extends typeof BaseModel,
+  >(): BaseModelConstructor<T> {
     return this.constructor as BaseModelConstructor<T>;
   }
 
-  protected _getCollectionRef<T extends BaseModel>(): CollectionReference<T> {
+  protected _getCollectionRef<T extends typeof BaseModel>(): CollectionReference<T> {
     return this._getConstructor<T>().getCollectionRef();
   }
 
@@ -384,7 +385,7 @@ export abstract class BaseModel implements BaseModelInterface {
       | undefined;
 
     if (meta) {
-      const parent = (this as any).__parent as BaseModel;
+      const parent = this.__parent;
       if (!parent?.id) {
         throw new Error(
           `Cannot save submodel ${ctor.name} without a parent instance having an ID.`
@@ -423,13 +424,13 @@ export abstract class BaseModel implements BaseModelInterface {
       if (
         key === "id" ||
         key.startsWith("_") || // Exclude internal properties like _populatedRelations
-        typeof (this as any)[key] === "function" ||
+        typeof this[key] === "function" ||
         !Object.prototype.hasOwnProperty.call(this, key)
       ) {
         continue;
       }
 
-      const value = (this as any)[key];
+      const value = this[key];
 
       // Handle Relations
       if (relationProperties.has(key)) {
@@ -803,8 +804,8 @@ export abstract class BaseModel implements BaseModelInterface {
     }
   }
 
-  async reload<T extends BaseModel>(
-    this: T,
+  async reload<T extends typeof BaseModel>(
+    this: any,
     options?: Pick<FindOptions<T>, "populate">
   ): Promise<T> {
     if (!this.id) {
@@ -827,13 +828,13 @@ export abstract class BaseModel implements BaseModelInterface {
     for (const key in freshInstance) {
       if (!Object.prototype.hasOwnProperty.call(freshInstance, key)) continue;
       if (key === "id") continue;
-      (this as any)[key] = (freshInstance as any)[key];
+      this[key] = freshInstance[key];
     }
 
     // Reconstructs Relationship Cache
     const relationMeta = constructor._getRelationMetadata();
-    relationMeta.forEach((meta) => {
-      const val = (this as any)[meta.propertyName];
+    relationMeta.forEach((meta: any) => {
+      const val = this[meta.propertyName];
       if (val instanceof BaseModel || val === null) {
         this._populatedRelations[meta.propertyName] = val;
       }
