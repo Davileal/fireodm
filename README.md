@@ -7,23 +7,52 @@
 [![License](https://img.shields.io/github/license/Davileal/fireodm)](https://github.com/Davileal/fireodm/blob/main/LICENSE)
 [![gzip size](https://img.shields.io/bundlephobia/minzip/fireodm)](https://bundlephobia.com/package/fireodm)
 [![codecov](https://codecov.io/gh/Davileal/fireodm/branch/master/graph/badge.svg)](https://codecov.io/gh/Davileal/fireodm)
-
+[![Contributors](https://img.shields.io/github/contributors/Davileal/fireodm.svg)](https://github.com/Davileal/fireodm/graphs/contributors)
 
 [Documentation](https://fireodm.netlify.app)
+
+## Contributors
+
+Thanks to everyone who has contributed to this project! Below are some of our amazing contributors:
+
+<table style="margin-bottom: 4rem;">
+  <tr>
+    <td align="center">
+      <a href="https://github.com/Davileal">
+        <img src="https://avatars.githubusercontent.com/Davileal?s=100" width="60" alt="charlie" style="border-radius:50%;"/>
+        <br />
+        <sub><b>Davileal</b></sub>
+      </a>
+    </td>
+     <td align="center">
+      <a href="https://github.com/wesleygonalv">
+        <img src="https://avatars.githubusercontent.com/wesleygonalv?s=100" width="60" alt="bob" style="border-radius:50%;"/>
+        <br />
+        <sub><b>wesleygonalv</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/ferreramfe">
+        <img src="https://avatars.githubusercontent.com/ferreramfe?s=100" width="60" alt="alice" style="border-radius:50%;"/>
+        <br />
+        <sub><b>ferreramfe</b></sub>
+      </a>
+    </td>
+  </tr>
+</table>
 
 A basic, extensible ORM (Object-Relational Mapper) / ODM (Object-Document Mapper) for the [Firebase Admin SDK](https://firebase.google.com/docs/admin/setup) in Node.js, built with TypeScript. Simplifies interacting with Firestore using classes, decorators, Zod validation, and relationship handling (DocumentReference).
 
 **Key Features:**
 
-* **Model Definition with Classes:** Use TypeScript classes to define your data structures.
-* **Decorators (`@Collection`, `@Relation`):** Declare metadata in a clear, declarative way.
-* **Simplified CRUD Operations:** `save()`, `update()`, `delete()`, `findById()`, `findAll()`, `findOne()`, `findWhere()`.
-* **Relationship Handling:** Store `DocumentReference` and populate related data on demand.
-* **Zod Validation:** Define a `static schema` on your models for automatic validation before save/update.
-* **Hooks (Lifecycle Callbacks):** Run custom logic before/after operations (`beforeSave`, `afterLoad`, etc.).
-* **Pagination:** Support for `limit` and `startAfter` in `findAll`.
-* **Strongly Typed:** Written in TypeScript for better DX and type safety.
-
+- **Model Definition with Classes:** Use TypeScript classes to define your data structures.
+- **Decorators (`@Collection`, `@Relation`):** Declare metadata in a clear, declarative way.
+- **Simplified CRUD Operations:** `save()`, `update()`, `delete()`, `findById()`, `findAll()`, `findOne()`, `findWhere()`.
+- **Relationship Handling:** Store `DocumentReferenöce` and populate related data on demand.
+- **Zod Validation:** Define a `static schema` on your models for automatic validation before save/update.
+- **Hooks (Lifecycle Callbacks):** Run custom logic before/after operations (`beforeSave`, `afterLoad`, etc.).
+- **Pagination:** Support for `limit` and `startAfter` in `findAll`.
+- **Strongly Typed:** Written in TypeScript for better DX and type safety.
 
 ## Installation
 
@@ -52,8 +81,8 @@ If you’d rather **not** write manual `this.foo = data.foo` bindings in every c
 Before using any ORM model, you need to initialize `firebase-admin` and provide the Firestore instance to the library:
 
 ```typescript
-import * as admin from 'firebase-admin';
-import { setFirestoreInstance } from 'fireodm'; // replace with your package name
+import * as admin from "firebase-admin";
+import { setFirestoreInstance } from "fireodm"; // replace with your package name
 
 // 1. Initialize Firebase Admin (using your credentials)
 admin.initializeApp({
@@ -71,7 +100,7 @@ const db = admin.firestore();
 // 3. Provide the instance to the ORM
 setFirestoreInstance(db);
 
-console.log('Firebase Admin initialized and ORM configured.');
+console.log("Firebase Admin initialized and ORM configured.");
 
 // Now you can import and use your ORM-defined models
 // import { User } from './models/User';
@@ -172,15 +201,15 @@ export class User extends BaseModel {
 ### Creating and Saving
 
 ```typescript
-const newUser = new User({ name: 'Test User', email: 'test@example.com' });
+const newUser = new User({ name: "Test User", email: "test@example.com" });
 try {
   await newUser.save();
-  console.log('User created with ID:', newUser.id);
+  console.log("User created with ID:", newUser.id);
 } catch (error) {
   if (error instanceof ValidationError) {
-    console.error('Validation failed:', error.issues);
+    console.error("Validation failed:", error.issues);
   } else {
-    console.error('Failed to save user:', error);
+    console.error("Failed to save user:", error);
   }
 }
 ```
@@ -189,50 +218,59 @@ try {
 
 ```typescript
 // By ID
-const user = await User.findById('some-user-id');
+const user = await User.findById("some-user-id");
 
 // By ID with Relations Populated
-const userWithDept = await User.findById('some-user-id', { populate: ['department'] });
+const userWithDept = await User.findById("some-user-id", {
+  populate: ["department"],
+});
 if (userWithDept?.department instanceof Department) {
   console.log(userWithDept.department.name);
 }
 
 // All (with pagination)
-const { results, lastVisible } = await User.findAll({ limit: 10, orderBy: { field: 'name' } });
+const { results, lastVisible } = await User.findAll({
+  limit: 10,
+  orderBy: { field: "name" },
+});
 
 // Next page
 if (lastVisible) {
-  const nextPage = await User.findAll({ limit: 10, orderBy: { field: 'name' }, startAfter: lastVisible });
+  const nextPage = await User.findAll({
+    limit: 10,
+    orderBy: { field: "name" },
+    startAfter: lastVisible,
+  });
 }
 
 // Simple Condition
-const activeAdmins = await User.findWhere('tags', 'array-contains', 'admin', {
-  queryFn: (ref) => ref.where('isActive', '==', true) // Combines findWhere with queryFn
+const activeAdmins = await User.findWhere("tags", "array-contains", "admin", {
+  queryFn: (ref) => ref.where("isActive", "==", true), // Combines findWhere with queryFn
 });
 
 // Complex Query
-const recentUsers = await User.findOne(
-  (ref) => ref.orderBy('createdAt', 'desc').limit(1)
+const recentUsers = await User.findOne((ref) =>
+  ref.orderBy("createdAt", "desc").limit(1)
 );
 ```
 
 ### Updating
 
 ```typescript
-const user = await User.findById('some-user-id');
+const user = await User.findById("some-user-id");
 if (user) {
-  await user.update({ name: 'Updated Name', /* ... other fields ... */ });
+  await user.update({ name: "Updated Name" /* ... other fields ... */ });
 }
 ```
 
 ### Populating Relations on an Instance
 
 ```typescript
-const user = await User.findById('some-user-id'); // Fetch without populating relations
+const user = await User.findById("some-user-id"); // Fetch without populating relations
 if (user) {
-  await user.populate('department'); // Populates the 'department' relation
+  await user.populate("department"); // Populates the 'department' relation
   if (user.department instanceof Department) {
-     // ... use user.department.name ...
+    // ... use user.department.name ...
   }
 }
 ```
@@ -240,7 +278,7 @@ if (user) {
 ### Deleting
 
 ```typescript
-const user = await User.findById('some-user-id');
+const user = await User.findById("some-user-id");
 if (user) {
   await user.delete();
 }
@@ -252,50 +290,62 @@ You can perform atomic operations by using the ORM's `save`, `update`, and `dele
 
 ### Important Considerations:
 
-* **Implicit Context:** ORM methods (`save`, `update`, `delete`) automatically detect if they are being run inside a context started by `runInTransaction` or `runInBatch`.
-* **Return Value:** When executed within one of these contexts, `save`, `update`, and `delete` now return `Promise<undefined>` because the actual `WriteResult` is only available after the entire transaction or batch commits externally. Direct calls outside these contexts still return `Promise<WriteResult>`.
-* **`after` Hooks Skipped:** Lifecycle hooks like `afterSave`, `afterUpdate`, and `afterDelete` are **NOT** executed automatically when the ORM methods run within a transaction or batch context. This is because the operation is only finalized upon committing the transaction/batch externally. You must handle any post-commit logic yourself if needed.
-* **`before` Hooks & Validation:** Lifecycle hooks like `beforeSave`, `beforeUpdate`, `beforeDelete`, and Zod validation **ARE** still executed before the operation is added to the implicit transaction or batch.
+- **Implicit Context:** ORM methods (`save`, `update`, `delete`) automatically detect if they are being run inside a context started by `runInTransaction` or `runInBatch`.
+- **Return Value:** When executed within one of these contexts, `save`, `update`, and `delete` now return `Promise<undefined>` because the actual `WriteResult` is only available after the entire transaction or batch commits externally. Direct calls outside these contexts still return `Promise<WriteResult>`.
+- **`after` Hooks Skipped:** Lifecycle hooks like `afterSave`, `afterUpdate`, and `afterDelete` are **NOT** executed automatically when the ORM methods run within a transaction or batch context. This is because the operation is only finalized upon committing the transaction/batch externally. You must handle any post-commit logic yourself if needed.
+- **`before` Hooks & Validation:** Lifecycle hooks like `beforeSave`, `beforeUpdate`, `beforeDelete`, and Zod validation **ARE** still executed before the operation is added to the implicit transaction or batch.
 
 ### Using Transactions (`runInTransaction`)
 
 Wrap your transaction logic within the `runInTransaction` helper function. Remember to perform all reads **before** writes within the transaction callback. The `transaction` object passed to your callback is the standard Firestore `Transaction` object, primarily used for `transaction.get()`.
 
 ```typescript
-import { getFirestoreInstance, User, Department, Timestamp, runInTransaction, WriteResult } from 'fireodm'; // Make sure to import runInTransaction
+import {
+  getFirestoreInstance,
+  User,
+  Department,
+  Timestamp,
+  runInTransaction,
+  WriteResult,
+} from "fireodm"; // Make sure to import runInTransaction
 
 const db = getFirestoreInstance(); // Not strictly needed here if you only use ORM methods
 
 try {
-    // Wrap operations in runInTransaction
-    const result = await runInTransaction(async (transaction) => {
-        // --- Reads FIRST (using the provided transaction object) ---
-        const userRef = User.getCollectionRef().doc('userId123');
-        const userSnap = await transaction.get(userRef); // Use transaction object for reads
-        if (!userSnap.exists) {
-            throw new Error("Transaction failed: User not found!");
-        }
-        // Create ORM instance from snapshot data
-        const userInstance = new User(userSnap.data() as Partial<User>, userSnap.id);
+  // Wrap operations in runInTransaction
+  const result = await runInTransaction(async (transaction) => {
+    // --- Reads FIRST (using the provided transaction object) ---
+    const userRef = User.getCollectionRef().doc("userId123");
+    const userSnap = await transaction.get(userRef); // Use transaction object for reads
+    if (!userSnap.exists) {
+      throw new Error("Transaction failed: User not found!");
+    }
+    // Create ORM instance from snapshot data
+    const userInstance = new User(
+      userSnap.data() as Partial<User>,
+      userSnap.id
+    );
 
-        // --- Writes SECOND (using ORM methods WITHOUT passing transaction) ---
-        const updateData = { name: 'Updated via Context', lastLogin: Timestamp.now() };
-        // The ORM method implicitly uses the active transaction from runInTransaction
-        await userInstance.update(updateData); // No transaction parameter needed! Returns Promise<undefined>
+    // --- Writes SECOND (using ORM methods WITHOUT passing transaction) ---
+    const updateData = {
+      name: "Updated via Context",
+      lastLogin: Timestamp.now(),
+    };
+    // The ORM method implicitly uses the active transaction from runInTransaction
+    await userInstance.update(updateData); // No transaction parameter needed! Returns Promise<undefined>
 
-        // Other ORM operations also use the context implicitly
-        const newDept = new Department({ name: `Dept for ${userInstance.name}`});
-        await newDept.save(); // No transaction parameter needed! Returns Promise<undefined>
+    // Other ORM operations also use the context implicitly
+    const newDept = new Department({ name: `Dept for ${userInstance.name}` });
+    await newDept.save(); // No transaction parameter needed! Returns Promise<undefined>
 
-        // You can still return values from the transaction callback
-        return { success: true, newDeptId: newDept.id };
-    });
+    // You can still return values from the transaction callback
+    return { success: true, newDeptId: newDept.id };
+  });
 
-    console.log("Transaction successful:", result);
-
+  console.log("Transaction successful:", result);
 } catch (error) {
-    // Catches errors from reads, writes, validation, or the commit attempt
-    console.error("Transaction failed:", error);
+  // Catches errors from reads, writes, validation, or the commit attempt
+  console.error("Transaction failed:", error);
 }
 ```
 
@@ -305,52 +355,65 @@ You can perform atomic operations by using the ORM's `save`, `update`, and `dele
 
 ### Important Considerations:
 
-* **Implicit Context:** ORM methods (`save`, `update`, `delete`) automatically detect if they are being run inside a context started by `runInTransaction` or `runInBatch`.
-* **Return Value:** When executed within one of these contexts, `save`, `update`, and `delete` now return `Promise<undefined>` because the actual `WriteResult` is only available after the entire transaction or batch commits externally. Direct calls outside these contexts still return `Promise<WriteResult>`.
-* **`after` Hooks Skipped:** Lifecycle hooks like `afterSave`, `afterUpdate`, and `afterDelete` are **NOT** executed automatically when the ORM methods run within a transaction or batch context. This is because the operation is only finalized upon committing the transaction/batch externally. You must handle any post-commit logic yourself if needed.
-* **`before` Hooks & Validation:** Lifecycle hooks like `beforeSave`, `beforeUpdate`, `beforeDelete`, and Zod validation **ARE** still executed before the operation is added to the implicit transaction or batch.
+- **Implicit Context:** ORM methods (`save`, `update`, `delete`) automatically detect if they are being run inside a context started by `runInTransaction` or `runInBatch`.
+- **Return Value:** When executed within one of these contexts, `save`, `update`, and `delete` now return `Promise<undefined>` because the actual `WriteResult` is only available after the entire transaction or batch commits externally. Direct calls outside these contexts still return `Promise<WriteResult>`.
+- **`after` Hooks Skipped:** Lifecycle hooks like `afterSave`, `afterUpdate`, and `afterDelete` are **NOT** executed automatically when the ORM methods run within a transaction or batch context. This is because the operation is only finalized upon committing the transaction/batch externally. You must handle any post-commit logic yourself if needed.
+- **`before` Hooks & Validation:** Lifecycle hooks like `beforeSave`, `beforeUpdate`, `beforeDelete`, and Zod validation **ARE** still executed before the operation is added to the implicit transaction or batch.
 
 ### Using Transactions (`runInTransaction`)
 
 Wrap your transaction logic within the `runInTransaction` helper function. Remember to perform all reads **before** writes within the transaction callback. The `transaction` object passed to your callback is the standard Firestore `Transaction` object, primarily used for `transaction.get()`.
 
 ```typescript
-import { getFirestoreInstance, User, Department, Timestamp, runInTransaction, WriteResult } from 'fireodm'; // Make sure to import runInTransaction
+import {
+  getFirestoreInstance,
+  User,
+  Department,
+  Timestamp,
+  runInTransaction,
+  WriteResult,
+} from "fireodm"; // Make sure to import runInTransaction
 
 try {
-    // Wrap operations in runInTransaction
-    const result = await runInTransaction(async (transaction) => {
-        // --- Reads FIRST (using the provided transaction object) ---
-        const userRef = User.getCollectionRef().doc('userId123');
-        const userSnap = await transaction.get(userRef); // Use transaction object for reads
-        if (!userSnap.exists) {
-            throw new Error("Transaction failed: User not found!");
-        }
-        // Create ORM instance from snapshot data
-        const userInstance = new User(userSnap.data() as Partial<User>, userSnap.id);
+  // Wrap operations in runInTransaction
+  const result = await runInTransaction(async (transaction) => {
+    // --- Reads FIRST (using the provided transaction object) ---
+    const userRef = User.getCollectionRef().doc("userId123");
+    const userSnap = await transaction.get(userRef); // Use transaction object for reads
+    if (!userSnap.exists) {
+      throw new Error("Transaction failed: User not found!");
+    }
+    // Create ORM instance from snapshot data
+    const userInstance = new User(
+      userSnap.data() as Partial<User>,
+      userSnap.id
+    );
 
-        // --- Writes SECOND (using ORM methods WITHOUT passing transaction) ---
-        const updateData = { name: 'Updated via Context', lastLogin: Timestamp.now() };
-        // The ORM method implicitly uses the active transaction from runInTransaction
-        await userInstance.update(updateData); // No transaction parameter needed! Returns Promise<undefined>
+    // --- Writes SECOND (using ORM methods WITHOUT passing transaction) ---
+    const updateData = {
+      name: "Updated via Context",
+      lastLogin: Timestamp.now(),
+    };
+    // The ORM method implicitly uses the active transaction from runInTransaction
+    await userInstance.update(updateData); // No transaction parameter needed! Returns Promise<undefined>
 
-        // Other ORM operations also use the context implicitly
-        const newDept = new Department({ name: `Dept for ${userInstance.name}`});
-        await newDept.save(); // No transaction parameter needed! Returns Promise<undefined>
+    // Other ORM operations also use the context implicitly
+    const newDept = new Department({ name: `Dept for ${userInstance.name}` });
+    await newDept.save(); // No transaction parameter needed! Returns Promise<undefined>
 
-        // You can still return values from the transaction callback
-        return { success: true, newDeptId: newDept.id };
-    });
+    // You can still return values from the transaction callback
+    return { success: true, newDeptId: newDept.id };
+  });
 
-    console.log("Transaction successful:", result);
-
+  console.log("Transaction successful:", result);
 } catch (error) {
-    // Catches errors from reads, writes, validation, or the commit attempt
-    console.error("Transaction failed:", error);
+  // Catches errors from reads, writes, validation, or the commit attempt
+  console.error("Transaction failed:", error);
 }
 ```
 
 ### Using Batched Writes (runInBatch)
+
 Wrap your batch operations logic within the runInBatch helper function. The ORM methods called inside will automatically add operations to the batch. The batch is committed automatically after your callback function successfully completes.
 
 ```typeScript
@@ -397,12 +460,14 @@ Below is a list of all available decorators:
 Defines a property as a string with optional constraints.
 
 **Options:**
+
 - `min`: minimum number of characters
 - `max`: maximum number of characters
 - `message`: custom error message
 - `required`: whether the field is required (default: `false`)
 
 **Example:**
+
 ```ts
 @StringField({ min: 3, max: 50, required: true })
 name!: string;
@@ -413,10 +478,12 @@ name!: string;
 Validates that the property is a valid email address.
 
 **Options:**
+
 - `message`: custom error message (default: `"Invalid email"`)
 - `required`: whether the field is required (default: `false`)
 
 **Example:**
+
 ```ts
 @EmailField()
 email?: string;
@@ -427,12 +494,14 @@ email?: string;
 Defines a property as a number with optional constraints.
 
 **Options:**
+
 - `min`: minimum value
 - `max`: maximum value
 - `message`: custom error message
 - `required`: whether the field is required (default: `false`)
 
 **Example:**
+
 ```ts
 @NumberField({ min: 0 })
 age?: number;
@@ -443,10 +512,12 @@ age?: number;
 Defines a property as a boolean, with optional default value.
 
 **Options:**
+
 - `required`: whether the field is required (default: `false`)
 - `defaultValue`: default boolean value (`true` or `false`)
 
 **Example:**
+
 ```ts
 @BooleanField({ defaultValue: false })
 isActive?: boolean;
@@ -457,10 +528,12 @@ isActive?: boolean;
 Defines a property as a Firestore `Timestamp` and optionally autofills it.
 
 **Options:**
+
 - `required`: whether the field is required (default: `false`)
 - `autoFill`: automatically set the current timestamp (default: `false`)
 
 **Example:**
+
 ```ts
 @TimestampField({ autoFill: true })
 createdAt?: Firestore.Timestamp;
@@ -471,9 +544,11 @@ createdAt?: Firestore.Timestamp;
 Defines a property as a Firestore `GeoPoint`.
 
 **Options:**
+
 - `required`: whether the field is required (default: `false`)
 
 **Example:**
+
 ```ts
 @GeoPointField()
 location?: Firestore.GeoPoint;
@@ -484,9 +559,11 @@ location?: Firestore.GeoPoint;
 Defines a property as an array with a specified schema for its elements.
 
 **Options:**
+
 - `required`: whether the field is required (default: `false`)
 
 **Example:**
+
 ```ts
 @ArrayField(z.string())
 tags?: string[];
@@ -497,9 +574,11 @@ tags?: string[];
 Defines a property as a map (key-value object) where the values follow a specified schema.
 
 **Options:**
+
 - `required`: whether the field is required (default: `false`)
 
 **Example:**
+
 ```ts
 @MapField(z.number())
 settings?: Record<string, number>;
@@ -510,30 +589,30 @@ settings?: Record<string, number>;
 Defines a property as a Firestore `DocumentReference` or a related `BaseModel` instance.
 
 **Options:**
+
 - `required`: whether the field is required (default: `false`)
 
 **Example:**
+
 ```ts
 @DocumentReferenceField()
 userRef?: DocumentReference<UserModel>;
 ```
 
-
 ## API (Main Exports)
 
-* `BaseModel`: Abstract base class for your models.  
-* `@Collection(name: string)`: Class decorator to set the collection name.
-* `@SubcollectionModel(name: string)`: Class decorator to set the subcollection name
-* `@Subcollection(property: string)`: Property decorator for subcollections.  
-* `@Relation(modelGetter: () => Constructor)`: Property decorator for `DocumentReference` relations.  
-* `setFirestoreInstance(db: Firestore)`: Function to initialize the library.  
-* `getFirestoreInstance()`: Gets the configured Firestore instance.  
-* `ValidationError`: Error class for Zod validation failures.  
-* `NotFoundError`: Error class for documents not found.  
-* `FindOptions`, `FindAllResult`: Interfaces for query options and results.  
-* `Timestamp`, `FieldValue`, `DocumentReference`, `CollectionReference`, etc.: Types re-exported from `firebase-admin/firestore`.  
-* `z`: Zod object re-exported for convenience when defining schemas.  
-
+- `BaseModel`: Abstract base class for your models.
+- `@Collection(name: string)`: Class decorator to set the collection name.
+- `@SubcollectionModel(name: string)`: Class decorator to set the subcollection name
+- `@Subcollection(property: string)`: Property decorator for subcollections.
+- `@Relation(modelGetter: () => Constructor)`: Property decorator for `DocumentReference` relations.
+- `setFirestoreInstance(db: Firestore)`: Function to initialize the library.
+- `getFirestoreInstance()`: Gets the configured Firestore instance.
+- `ValidationError`: Error class for Zod validation failures.
+- `NotFoundError`: Error class for documents not found.
+- `FindOptions`, `FindAllResult`: Interfaces for query options and results.
+- `Timestamp`, `FieldValue`, `DocumentReference`, `CollectionReference`, etc.: Types re-exported from `firebase-admin/firestore`.
+- `z`: Zod object re-exported for convenience when defining schemas.
 
 # Contributing
 
@@ -581,12 +660,12 @@ npm run lint
 
 ## 3. Submitting Changes
 
-1. **Fork** the repo.  
-2. Create a **feature branch**: `git checkout -b feat/my-new-feature`.  
-3. **Commit** your changes with clear, descriptive messages.  
-4. **Rebase** or **merge** the latest `main` to keep your branch up to date.  
-5. **Push** to your fork and open a **Pull Request** in this repo.  
-6. Fill out the PR template and describe the motivation and context.  
+1. **Fork** the repo.
+2. Create a **feature branch**: `git checkout -b feat/my-new-feature`.
+3. **Commit** your changes with clear, descriptive messages.
+4. **Rebase** or **merge** the latest `main` to keep your branch up to date.
+5. **Push** to your fork and open a **Pull Request** in this repo.
+6. Fill out the PR template and describe the motivation and context.
 
 We’ll review your PR, suggest any changes, and merge once it’s ready.
 
@@ -594,9 +673,9 @@ We’ll review your PR, suggest any changes, and merge once it’s ready.
 
 Please search existing issues before opening a new one. For bug reports, provide:
 
-- **Steps to reproduce**  
-- **Expected vs. actual behavior**  
-- **Code snippets** or **logs**  
+- **Steps to reproduce**
+- **Expected vs. actual behavior**
+- **Code snippets** or **logs**
 
 Feature requests should include a clear use case and proposed API if possible.
 
@@ -604,8 +683,6 @@ Feature requests should include a clear use case and proposed API if possible.
 
 This project follows the [Contributor Covenant](https://www.contributor-covenant.org/). Please be respectful and inclusive.
 
-
 ## License
 
 [MIT](./LICENSE)
-
