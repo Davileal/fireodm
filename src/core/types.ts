@@ -15,7 +15,7 @@ import {
 import { ZodSchema } from "zod";
 import { BaseModel } from "./base-model";
 
-export interface FindOptions<T extends BaseModel> {
+export interface FindOptions<T extends typeof BaseModel = any> {
   populate?: (keyof T | string)[] | boolean;
   populateSub?: string[];
   limit?: number;
@@ -27,6 +27,7 @@ export interface FindOptions<T extends BaseModel> {
   startAt?: DocumentSnapshot | any[];
   endBefore?: DocumentSnapshot | any[];
   endAt?: DocumentSnapshot | any[];
+  queryFn?: (ref: CollectionReference<T>) => Query<T>;
 }
 
 export interface FindAllResult<T> {
@@ -34,7 +35,7 @@ export interface FindAllResult<T> {
   lastVisible?: DocumentSnapshot;
 }
 
-export interface RelationMetadata<T extends BaseModel = any> {
+export interface RelationMetadata<T extends typeof BaseModel = any> {
   propertyName: string;
   relatedModel: () => BaseModelConstructor<T>;
   lazy: boolean;
@@ -45,13 +46,13 @@ export interface SubModelMetadata {
   subPath: string
 }
 
-export interface SubCollectionMetadata<T extends BaseModel = any> {
+export interface SubCollectionMetadata<T extends typeof BaseModel = any> {
   propertyName: string;
   name: string;
   model: () => BaseModelConstructor<T>;
 }
 
-export interface BaseModelConstructor<T extends BaseModel = any> {
+export interface BaseModelConstructor<T extends typeof BaseModel = any> {
   new (data: Partial<Record<string, any>>, id?: string): T;
   schema?: ZodSchema<any>;
   _getCollectionName(): string;
@@ -85,7 +86,7 @@ export interface BaseModelInterface {
     updateData: PartialWithFieldValue<this> | UpdateData<this>
   ): Promise<WriteResult | undefined>;
   delete(): Promise<WriteResult | undefined>;
-  reload<T extends BaseModel>(
+  reload<T extends typeof BaseModel>(
     this: T,
     options?: Pick<FindOptions<T>, "populate">
   ): Promise<T>;

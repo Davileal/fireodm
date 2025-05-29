@@ -58,7 +58,7 @@ export function SubCollectionModel(
   };
 }
 
-export function SubCollection<T extends BaseModel>(
+export function SubCollection<T extends typeof BaseModel>(
   modelGetter: () => BaseModelConstructor<T>,
   name?: string
 ) {
@@ -91,7 +91,7 @@ export function SubCollection<T extends BaseModel>(
  * }
  * ```
  */
-export function Relation<T extends BaseModel>(
+export function Relation<T extends typeof BaseModel>(
   relatedModelGetter: () => BaseModelConstructor<T>,
   options: { lazy?: boolean } = { lazy: true }
 ) {
