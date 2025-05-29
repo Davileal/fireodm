@@ -302,3 +302,16 @@ export function DocumentReferenceField(
 
   return Validate(schema);
 }
+
+export function EnumField<T extends Record<string, any>>(
+  enumObj: T,
+  opts: { required?: boolean; defaultValue?: T[keyof T]; } = { required: false }
+) {
+  let enumSchema: ZodTypeAny = z.nativeEnum(enumObj);
+  if (!opts.required) enumSchema = enumSchema.optional();
+
+  if (opts.defaultValue !== undefined) {
+    enumSchema = (enumSchema as any).default(opts.defaultValue);
+  }
+  return Validate(enumSchema);
+}

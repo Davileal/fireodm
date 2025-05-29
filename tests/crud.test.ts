@@ -1,7 +1,7 @@
 import { FieldValue, Timestamp, WriteResult } from "firebase-admin/firestore";
 import { getFirestoreInstance, NotFoundError, ValidationError } from "../src"; // Import from your library
 import { runInBatch, runInTransaction } from "../src/core/transaction-manager";
-import { User, userHooks } from "./helpers/models";
+import { User, userHooks, UserStatusEnum } from "./helpers/models";
 
 describe("BaseModel - CRUD Operations", () => {
   // Clears the hook mocks before each test in this file
@@ -10,7 +10,7 @@ describe("BaseModel - CRUD Operations", () => {
   });
 
   it("should create a new document with save() and assign ID", async () => {
-    const userData = { name: "Create User", email: "create@test.com", age: 30 };
+    const userData = { name: "Create User", email: "create@test.com", age: 30, status: UserStatusEnum.ACTIVE };
     const user = new User(userData);
 
     // Checks that there is no ID before saving
@@ -34,6 +34,8 @@ describe("BaseModel - CRUD Operations", () => {
     expect(user.email).toBe("create@test.com");
     expect(user.age).toBe(30);
     expect(user.isActive).toBe(true); // Default from Zod/class
+    expect(Object.values(UserStatusEnum)).toContain(user.status);
+    expect(user.status).toBe(UserStatusEnum.ACTIVE); // Default from Zod/class
     expect(user.hookValue).toBe("set_on_beforeSave"); // Hook modified the value
     expect(user.createdAt).toBeInstanceOf(Timestamp); // Hook added it
     expect(user.updatedAt).toBeInstanceOf(Timestamp); // Hook added it
@@ -57,6 +59,8 @@ describe("BaseModel - CRUD Operations", () => {
     expect(data?.hookValue).toBe("set_on_beforeSave");
     expect(data?.createdAt).toBeInstanceOf(Timestamp);
     expect(data?.updatedAt).toBeInstanceOf(Timestamp);
+    expect(Object.values(UserStatusEnum)).toContain(data?.status);
+    expect(data?.status).toBe(UserStatusEnum.ACTIVE);
   });
 
   it("should overwrite an existing document with save() when ID exists", async () => {
@@ -64,6 +68,7 @@ describe("BaseModel - CRUD Operations", () => {
     const initialUser = new User({
       name: "Initial User",
       email: "overwrite@test.com",
+      status: UserStatusEnum.ACTIVE
     });
     await initialUser.save();
     const userId = initialUser.id!;
@@ -73,6 +78,7 @@ describe("BaseModel - CRUD Operations", () => {
       name: "Overwritten User",
       email: "overwritten@test.com",
       tags: ["updated"],
+      status: UserStatusEnum.PENDING
     };
     const userToOverwrite = new User(updatedUserData, userId); // Passes the existing ID
 
@@ -97,6 +103,8 @@ describe("BaseModel - CRUD Operations", () => {
     expect(userToOverwrite.updatedAt?.seconds).toBeGreaterThanOrEqual(
       userToOverwrite.createdAt?.seconds ?? 0
     ); // updatedAt was updated
+    expect(Object.values(UserStatusEnum)).toContain(userToOverwrite.status);
+    expect(userToOverwrite.status).toBe(UserStatusEnum.PENDING);
 
     // Checks directly in Firestore
     const db = getFirestoreInstance();
@@ -108,10 +116,12 @@ describe("BaseModel - CRUD Operations", () => {
     expect(data?.tags).toEqual(["updated"]);
     expect(data?.age).toBeUndefined(); // Field was removed in overwrite
     expect(data?.hookValue).toBe("set_on_beforeSave");
+    expect(Object.values(UserStatusEnum)).toContain(data?.status);
+    expect(data?.status).toBe(UserStatusEnum.PENDING);
   });
 
   it("should find a document by ID using findById()", async () => {
-    const user = new User({ name: "Find Me", email: "find@test.com" });
+    const user = new User({ name: "Find Me", email: "find@test.com", status: UserStatusEnum.ACTIVE });
     await user.save();
     const userId = user.id!;
 
@@ -124,6 +134,8 @@ describe("BaseModel - CRUD Operations", () => {
     expect(foundUser?.id).toBe(userId);
     expect(foundUser?.name).toBe("Find Me");
     expect(foundUser?.email).toBe("find@test.com");
+    expect(Object.values(UserStatusEnum)).toContain(foundUser?.status);
+    expect(foundUser?.status).toBe(UserStatusEnum.ACTIVE);
 
     // The afterLoad hook receives the newly created instance
     expect(userHooks.afterLoad).toHaveBeenCalledWith(
@@ -143,6 +155,7 @@ describe("BaseModel - CRUD Operations", () => {
       email: "update@test.com",
       age: 40,
       loginCount: 5,
+      status: UserStatusEnum.ACTIVE
     });
     await user.save();
     const userId = user.id!;
@@ -157,6 +170,7 @@ describe("BaseModel - CRUD Operations", () => {
       tags: ["a", "b"],
       lastLogin: Timestamp.now(),
       loginCount: FieldValue.increment(2), // Uses FieldValue
+      status: UserStatusEnum.PENDING
     };
     const writeResult = await user.update(updatePayload);
 
@@ -174,6 +188,8 @@ describe("BaseModel - CRUD Operations", () => {
     expect(user.updatedAt?.seconds).toBeGreaterThanOrEqual(
       initialCreatedAt?.seconds ?? 0
     ); // updatedAt was updated
+    expect(Object.values(UserStatusEnum)).toContain(user?.status);
+    expect(user?.status).toBe(UserStatusEnum.PENDING);
 
     // Checks hooks
     expect(userHooks.beforeUpdate).toHaveBeenCalledTimes(1);
@@ -202,6 +218,8 @@ describe("BaseModel - CRUD Operations", () => {
     expect(data?.hookValue).toBe("set_on_beforeUpdate");
     expect(data?.createdAt).toEqual(initialCreatedAt);
     expect(data?.updatedAt).toBeInstanceOf(Timestamp);
+    expect(Object.values(UserStatusEnum)).toContain(data?.status);
+    expect(data?.status).toBe(UserStatusEnum.PENDING);
   });
 
   it("should throw error when updating without an ID", async () => {
@@ -255,6 +273,7 @@ describe("BaseModel - CRUD Operations", () => {
       name: "Reload User",
       email: "reload@test.com",
       age: 50,
+      status: UserStatusEnum.ACTIVE
     });
     await user.save();
     const userId = user.id!;
@@ -264,12 +283,14 @@ describe("BaseModel - CRUD Operations", () => {
     await db
       .collection("users")
       .doc(userId)
-      .update({ name: "Reloaded Externally", age: 51, tags: ["external"] });
+      .update({ name: "Reloaded Externally", age: 51, tags: ["external"], status: UserStatusEnum.INACTIVE });
 
     // Checks that the local instance is outdated
     expect(user.name).toBe("Reload User");
     expect(user.age).toBe(50);
     expect(user.tags).toBeUndefined();
+    expect(Object.values(UserStatusEnum)).toContain(user.status);
+    expect(user.status).toBe(UserStatusEnum.ACTIVE);
 
     const reloadedUser = await user.reload();
 
@@ -281,6 +302,8 @@ describe("BaseModel - CRUD Operations", () => {
     expect(user.age).toBe(51);
     expect(user.tags).toEqual(["external"]);
     expect(user.email).toBe("reload@test.com"); // Email not modified externally
+    expect(Object.values(UserStatusEnum)).toContain(user.status);
+    expect(user.status).toBe(UserStatusEnum.INACTIVE);
   });
 
   it("should throw NotFoundError from reload() if document was deleted", async () => {
@@ -298,23 +321,38 @@ describe("BaseModel - CRUD Operations", () => {
     );
   });
 
-  it("should handle validation errors on save()", async () => {
-    const invalidUserData = { name: "Valid Name", email: "invalid-email" }; // Invalid email
-    const user = new User(invalidUserData);
+it("should handle validation errors on save()", async () => {
+    const userWithInvalidEmail = { name: "Valid Name", email: "invalid-email" }; // Invalid email
+    const user1 = new User(userWithInvalidEmail);
 
-    await expect(user.save()).rejects.toThrow(ValidationError);
-    await expect(user.save()).rejects.toThrow(/Validation failed.*email/); // Checks that message contains 'email'
+    await expect(user1.save()).rejects.toThrow(ValidationError);
+    await expect(user1.save()).rejects.toThrow(/Validation failed.*email/); // Checks that message contains 'email'
 
     // Checks that user was not saved
-    expect(user.id).toBeUndefined();
+    expect(user1.id).toBeUndefined();
+    // Checks that afterSave was not called
+    expect(userHooks.afterSave).not.toHaveBeenCalled();
+
+    const userWithInvalidEnum = {
+      name: "Valid Name",
+      email: "user@localhost.com",
+      status: "invalid-enum-status" as any,
+    }; // Invalid enum
+    const user2 = new User(userWithInvalidEnum);
+
+    await expect(user2.save()).rejects.toThrow(ValidationError);
+    await expect(user2.save()).rejects.toThrow(/Validation failed.*status/); // Checks that message contains 'status'
+
+    // Checks that user was not saved
+    expect(user2.id).toBeUndefined();
     // Checks that afterSave was not called
     expect(userHooks.afterSave).not.toHaveBeenCalled();
   });
 
   it("should find documents by field using findWhere()", async () => {
     // Setup two users with different names and ages
-    const u1 = new User({ name: "FindOne", email: "one@test.com", age: 25 });
-    const u2 = new User({ name: "FindTwo", email: "two@test.com", age: 30 });
+    const u1 = new User({ name: "FindOne", email: "one@test.com", age: 25, status: UserStatusEnum.ACTIVE });
+    const u2 = new User({ name: "FindTwo", email: "two@test.com", age: 30, status: UserStatusEnum.INACTIVE });
     await u1.save();
     await u2.save();
 
@@ -323,11 +361,15 @@ describe("BaseModel - CRUD Operations", () => {
     expect(Array.isArray(nameResult)).toBe(true);
     expect(nameResult).toHaveLength(1);
     expect(nameResult[0].id).toBe(u1.id);
+    expect(Object.values(UserStatusEnum)).toContain(nameResult[0].status);
+    expect(nameResult[0].status).toBe(UserStatusEnum.ACTIVE);
 
     // Query by age
     const ageResult = await User.findWhere("age", ">=", 30);
     expect(ageResult).toHaveLength(1);
     expect(ageResult[0].id).toBe(u2.id);
+    expect(Object.values(UserStatusEnum)).toContain(ageResult[0].status);
+    expect(ageResult[0].status).toBe(UserStatusEnum.INACTIVE);
   });
 
   it("should return an empty array when no documents match findWhere()", async () => {
