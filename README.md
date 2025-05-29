@@ -193,6 +193,9 @@ export class User extends BaseModel {
   @Relation(() => User)
   manager?: DocumentReference | User | null;
 
+  @EnumField(UserStatusEnum, { required: true, defaultValue: UserStatusEnum.ACTIVE })
+  status?: UserStatusEnum;
+
   constructor(data: Partial<User>, id?: string) {
     super(data, id);
   }
@@ -598,6 +601,29 @@ Defines a property as a Firestore `DocumentReference` or a related `BaseModel` i
 ```ts
 @DocumentReferenceField()
 userRef?: DocumentReference<UserModel>;
+```
+
+### 🔢 `@EnumField()`
+
+Defines a property as one of a predefined set of values (an enum).
+
+**Options:**
+
+- `enumObj`: the enum object to validate against  
+- `required`: whether the field is required (default: `false`)  
+- `defaultValue`: a value from the enum to use as a default
+
+**Example:**
+
+```ts
+enum UserRole {
+  Admin   = 'admin',
+  Editor  = 'editor',
+  Viewer  = 'viewer',
+}
+
+@EnumField(UserRole, { required: true, defaultValue: UserRole.Viewer })
+role!: UserRole;
 ```
 
 ## API (Main Exports)
