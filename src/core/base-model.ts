@@ -539,8 +539,22 @@ export abstract class BaseModel implements BaseModelInterface {
           (async () => {
             try {
               const RelatedModel = meta.relatedModel();
-              // Use findById without populate options here to prevent deep loops by default
-              const relatedInstance = await RelatedModel.findById(value.id);
+
+              // Check if the related model has a subcollection metadata
+              const subCollectionMeta = Reflect.getOwnMetadata(SUBMODEL_KEY, RelatedModel);
+              let relatedInstance: any = null;
+
+              // If it's a subcollection, fetch the document from the subcollection
+              if (subCollectionMeta) {
+                const docSnap = await value.get();
+
+                if (docSnap.exists) {
+                  relatedInstance = RelatedModel._fromFirestore(docSnap);
+                }
+              } else {
+                // Use findById without populate options here to prevent deep loops by default
+                relatedInstance = await RelatedModel.findById(value.id);
+              }
               (this as any)[fieldName] = relatedInstance; // Update instance property
               this._populatedRelations[fieldName] = relatedInstance; // Update cache
             } catch (error) {
