@@ -11,10 +11,12 @@ import {
   RelationMetadata,
   SubModelMetadata,
   SubCollectionMetadata,
+  SubCollectionDocMetadata,
 } from "./types"; // Import type from types.ts
 import { Validate } from "./validation";
 import DocumentReference = admin.firestore.DocumentReference;
 
+export const SUBCOL_DOC_KEY = Symbol("subcollectionDocs");
 export const COLLECTION_KEY = Symbol("collectionName");
 export const RELATION_KEY = Symbol("relations");
 export const TIMESTAMP_KEY = Symbol("timestamps");
@@ -41,6 +43,37 @@ export function Collection(name: string) {
       );
     }
     Reflect.defineMetadata(COLLECTION_KEY, name, constructor);
+  };
+}
+
+/**
+ * Decorator to link a property to a specific document within a subcollection.
+ * @param modelGetter A function returning the constructor of the model for the document.
+ * @param docId The fixed ID of the document within the subcollection.
+ * @param options Options object, must include the subcollection name.
+ */
+export function SubCollectionDoc<T extends typeof BaseModel>(
+  modelGetter: () => BaseModelConstructor<T>,
+  docId: string,
+  options: { subcollection: string }
+) {
+  return (target: any, propertyName: string) => {
+    const ctor = target.constructor as Function;
+    const list: SubCollectionDocMetadata[] =
+      Reflect.getOwnMetadata(SUBCOL_DOC_KEY, ctor) || [];
+
+    if (!options || !options.subcollection) {
+      throw new Error(`@SubCollectionDoc for "${propertyName}" requires a 'subcollection' name in options.`);
+    }
+
+    list.push({
+      propertyName,
+      docId,
+      subcollectionName: options.subcollection,
+      model: modelGetter,
+    });
+
+    Reflect.defineMetadata(SUBCOL_DOC_KEY, list, ctor);
   };
 }
 

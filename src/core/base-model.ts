@@ -25,6 +25,7 @@ import {
   BOOLEAN_KEY,
   getCollectionName,
   getRelationMetadata,
+  SUBCOL_DOC_KEY,
   SUBCOL_KEY,
   SUBMODEL_KEY,
   TIMESTAMP_KEY,
@@ -36,6 +37,7 @@ import {
   FindAllResult,
   FindOptions,
   RelationMetadata,
+  SubCollectionDocMetadata,
   SubCollectionMetadata,
   SubModelMetadata,
 } from "./types";
@@ -168,7 +170,7 @@ export abstract class BaseModel implements BaseModelInterface {
     if (!snapshot.exists) {
       return null;
     }
-    const data = snapshot.data() as DocumentData;
+    const data = snapshot.data() || {};
     const relationMeta = this._getRelationMetadata();
     const instanceData: Partial<T> = {};
 
@@ -187,7 +189,10 @@ export abstract class BaseModel implements BaseModelInterface {
     }
 
     // Create the instance with non-relational data
-    const instance = new (this as BaseModelConstructor)(instanceData, snapshot.id);
+    const instance = new (this as BaseModelConstructor)(
+      instanceData,
+      snapshot.id
+    );
 
     // Now, assign DocumentReferences for relations directly to the instance
     relationMeta.forEach((meta) => {
@@ -246,7 +251,9 @@ export abstract class BaseModel implements BaseModelInterface {
         );
         if (!meta) continue;
 
-        const items = await instance.subcollection(propName as keyof InstanceType<T>);
+        const items = await instance.subcollection(
+          propName as keyof InstanceType<T>
+        );
         (instance as any)[propName] = items;
       }
 
@@ -374,7 +381,9 @@ export abstract class BaseModel implements BaseModelInterface {
     return this.constructor as BaseModelConstructor<T>;
   }
 
-  protected _getCollectionRef<T extends typeof BaseModel>(): CollectionReference<T> {
+  protected _getCollectionRef<
+    T extends typeof BaseModel,
+  >(): CollectionReference<T> {
     return this._getConstructor<T>().getCollectionRef();
   }
 
@@ -501,6 +510,10 @@ export abstract class BaseModel implements BaseModelInterface {
   ): Promise<void> {
     const constructor = this._getConstructor();
     const relationMeta = constructor._getRelationMetadata();
+
+    const subDocMeta: SubCollectionDocMetadata[] =
+      Reflect.getOwnMetadata(SUBCOL_DOC_KEY, constructor) || [];
+
     let fieldsToPopulate: string[];
 
     if (typeof fieldNames === "boolean" && fieldNames) {
@@ -541,7 +554,10 @@ export abstract class BaseModel implements BaseModelInterface {
               const RelatedModel = meta.relatedModel();
 
               // Check if the related model has a subcollection metadata
-              const subCollectionMeta = Reflect.getOwnMetadata(SUBMODEL_KEY, RelatedModel);
+              const subCollectionMeta = Reflect.getOwnMetadata(
+                SUBMODEL_KEY,
+                RelatedModel
+              );
               let relatedInstance: any = null;
 
               // If it's a subcollection, fetch the document from the subcollection
@@ -576,6 +592,50 @@ export abstract class BaseModel implements BaseModelInterface {
         this._populatedRelations[fieldName] = null;
       }
       // else: The field holds something other than Ref/Instance/null/undefined - ignore.
+    }
+
+    for (const fieldName of fieldsToPopulate) {
+      const meta = subDocMeta.find((m) => m.propertyName === fieldName);
+      if (!meta) {
+        continue;
+      }
+
+      if (this._populatedRelations.hasOwnProperty(fieldName)) {
+        (this as any)[fieldName] = this._populatedRelations[fieldName];
+        continue;
+      }
+
+      populationPromises.push(
+        (async () => {
+          try {
+            const Model = meta.model();
+            const parentDocRef = this._getDocRef();
+
+            const docRef = parentDocRef
+              .collection(meta.subcollectionName)
+              .doc(meta.docId);
+            const docSnap = await docRef.get();
+
+            let instance: any = null;
+            if (docSnap.exists) {
+              instance = Model._fromFirestore(docSnap);
+              if (instance) {
+                (instance as any).__parent = this;
+              }
+            }
+
+            (this as any)[fieldName] = instance;
+            this._populatedRelations[fieldName] = instance;
+          } catch (error) {
+            console.error(
+              `[${constructor.name}] Error populating subcollection document '${fieldName}' (ID: ${meta.docId}) on instance ${this.id}:`,
+              error
+            );
+            (this as any)[fieldName] = null;
+            this._populatedRelations[fieldName] = null;
+          }
+        })()
+      );
     }
     // Wait for all fetches to complete
     await Promise.all(populationPromises);

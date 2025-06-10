@@ -16,7 +16,8 @@ export {
   StringField,
   TimestampField,
   EnumField,
-  SubCollection
+  SubCollection,
+  SubCollectionDoc
 } from "./core/decorators";
 
 // --- Types and Interfaces ---
@@ -26,7 +27,8 @@ export type {
   FindOptions,
   RelationMetadata,
   SubModelMetadata,
-  SubCollectionMetadata
+  SubCollectionMetadata,
+  SubCollectionDocMetadata
 } from "./core/types";
 
 // --- Errors ---

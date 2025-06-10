@@ -52,6 +52,13 @@ export interface SubCollectionMetadata<T extends typeof BaseModel = any> {
   model: () => BaseModelConstructor<T>;
 }
 
+export interface SubCollectionDocMetadata<T extends typeof BaseModel = any> {
+  propertyName: string;
+  docId: string;
+  subcollectionName: string;
+  model: () => BaseModelConstructor<T>;
+}
+
 export interface BaseModelConstructor<T extends typeof BaseModel = any> {
   new (data: Partial<Record<string, any>>, id?: string): T;
   schema?: ZodSchema<any>;
