@@ -138,6 +138,7 @@ import {
   NumberField,
   StringField,
   TimestampField,
+  SubCollectionDoc,
 } from "fireodm";
 
 @Collection("departments")
@@ -151,6 +152,12 @@ export class Department extends BaseModel {
   constructor(data: Partial<Department>, id?: string) {
     super(data, id);
   }
+}
+
+@SubCollectionModel(() => User, "advanced-data")
+export class UserAdvancedData extends BaseModel {
+  @StringField()
+  someData?: string;
 }
 
 @Collection("users")
@@ -189,6 +196,10 @@ export class User extends BaseModel {
   @Relation(() => Department)
   department?: DocumentReference | Department | null;
 
+  // Mapped to a specific document in a subcollection
+  @SubCollectionDoc(() => UserAdvancedData, 'data-v1', { subcollection: 'advanced-data' })
+  advancedData?: UserAdvancedData;
+
   @DocumentReferenceField({ required: false })
   @Relation(() => User)
   manager?: DocumentReference | User | null;
@@ -226,10 +237,13 @@ const user = await User.findById("some-user-id");
 
 // By ID with Relations Populated
 const userWithDept = await User.findById("some-user-id", {
-  populate: ["department"],
+  populate: ["department", "advancedData"],
 });
 if (userWithDept?.department instanceof Department) {
   console.log(userWithDept.department.name);
+}
+if (userWithData?.advancedData instanceof UserAdvancedData) {
+  console.log(userWithData.advancedData.someData);
 }
 
 // All (with pagination)
@@ -272,7 +286,7 @@ if (user) {
 ```typescript
 const user = await User.findById("some-user-id"); // Fetch without populating relations
 if (user) {
-  await user.populate("department"); // Populates the 'department' relation
+  await user.populate(["department", "advancedData"]);
   if (user.department instanceof Department) {
     // ... use user.department.name ...
   }
@@ -624,6 +638,19 @@ enum UserRole {
 
 @EnumField(UserRole, { required: true, defaultValue: UserRole.Viewer })
 role!: UserRole;
+```
+
+### 📄 `@SubCollectionDoc()`
+Defines a property that maps to a single, specific document within a subcollection. This is ideal for one-to-one relationships where a child document has a fixed, known ID. The property can be populated using the populate option in findById or by calling `instance.populate()`.
+
+#### Signature:
+`@SubCollectionDoc(modelGetter, docId, options: { subcollection: string })`
+
+#### Example:
+
+```ts
+@SubCollectionDoc(() => UserConfig, 'config', { subcollection: 'metadata' })
+config?: UserConfig;
 ```
 
 ## API (Main Exports)
