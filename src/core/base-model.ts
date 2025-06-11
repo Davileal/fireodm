@@ -61,6 +61,7 @@ function isWriteBatch(obj: any): obj is WriteBatch {
 export abstract class BaseModel implements BaseModelInterface {
   public id?: string;
   private __parent?: BaseModel;
+  private __docRef?: DocumentReference;
 
   private static _builtSchema?: ZodSchema<any>;
   static get schema(): ZodSchema<any> {
@@ -85,6 +86,14 @@ export abstract class BaseModel implements BaseModelInterface {
       this.id = idOrParent;
     }
     Object.assign(this, data);
+  }
+
+  get docRef(): DocumentReference {
+    return this._getDocRef();
+  }
+
+  get collectionRef(): CollectionReference {
+    return this.docRef.parent;
   }
 
   // --- Static methods ---
@@ -193,6 +202,8 @@ export abstract class BaseModel implements BaseModelInterface {
       instanceData,
       snapshot.id
     );
+
+    (instance as any).__docRef = snapshot.ref;
 
     // Now, assign DocumentReferences for relations directly to the instance
     relationMeta.forEach((meta) => {
@@ -388,38 +399,44 @@ export abstract class BaseModel implements BaseModelInterface {
   }
 
   protected _getDocRef(): DocumentReference<DocumentData> {
+    if (this.__docRef) {
+      if (!this.id && this.__docRef.id) {
+        this.id = this.__docRef.id;
+      }
+      return this.__docRef;
+    }
+
     const ctor = this._getConstructor();
     const meta = Reflect.getOwnMetadata(SUBMODEL_KEY, ctor) as
       | SubModelMetadata
       | undefined;
 
+    let ref: DocumentReference<DocumentData>;
+
     if (meta) {
       const parent = this.__parent;
       if (!parent?.id) {
         throw new Error(
-          `Cannot save submodel ${ctor.name} without a parent instance having an ID.`
+          `Cannot get DocumentReference for submodel ${ctor.name} without a parent instance having an ID.`
         );
       }
       const parentDocRef = parent._getDocRef();
       const subColl = parentDocRef.collection(meta.subPath);
 
-      if (!this.id) {
-        const ref = subColl.doc();
-        this.id = ref.id;
-        return ref;
-      }
-      return subColl.doc(this.id);
+      ref = this.id ? subColl.doc(this.id) : subColl.doc();
+    } else {
+      const rawCollectionRef = getFirestoreInstance().collection(
+        ctor._getCollectionName()
+      );
+      ref = this.id ? rawCollectionRef.doc(this.id) : rawCollectionRef.doc();
     }
 
-    const rawCollectionRef = getFirestoreInstance().collection(
-      ctor._getCollectionName()
-    );
     if (!this.id) {
-      const ref = rawCollectionRef.doc();
       this.id = ref.id;
-      return ref;
     }
-    return rawCollectionRef.doc(this.id);
+
+    this.__docRef = ref;
+    return this.__docRef;
   }
 
   protected _toFirestore(serializing: boolean = false): DocumentData {
