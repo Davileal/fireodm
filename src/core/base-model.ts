@@ -146,7 +146,8 @@ export abstract class BaseModel implements BaseModelInterface {
    */
   async subcollection<Sub extends BaseModel>(
     this: this,
-    prop: keyof this
+    prop: keyof this,
+    queryFn?: (ref: CollectionReference<Sub>) => Query<Sub>
   ): Promise<Sub[]> {
     const ctor = this.constructor as Function;
     const metas = (Reflect.getOwnMetadata(SUBCOL_KEY, ctor) ||
@@ -160,11 +161,16 @@ export abstract class BaseModel implements BaseModelInterface {
 
     const parentDocRef = this._getDocRef();
 
-    const childCol = parentDocRef
+    const subCollectionRef = parentDocRef
       .collection(meta.name)
-      .withConverter(meta.model()._getFirestoreConverter());
+      .withConverter(
+        meta.model()._getFirestoreConverter()
+      ) as CollectionReference<Sub>;
 
-    const snap = await childCol.get();
+    const query = queryFn ? queryFn(subCollectionRef) : subCollectionRef;
+
+    const snap = await query.get();
+
     return snap.docs.map((d) => {
       const inst = d.data() as Sub;
       (inst as any).__parent = this;
